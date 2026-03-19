@@ -13,10 +13,11 @@ const MONTH_MAP: Record<string, string> = {
 };
 
 /**
- * Split raw text into individual sale blocks using "ML #" as primary delimiter.
+ * Split raw text into individual sale blocks using "ML" + optional city + "#" as delimiter.
+ * Handles patterns like "ML #", "ML OURINHOS #", "ML CITY NAME #" etc.
  */
 export function splitSaleBlocks(rawText: string): string[] {
-  const parts = rawText.split(/(?=ML\s*#)/i);
+  const parts = rawText.split(/(?=ML\s+(?:[A-ZÀ-Ú]+\s+)*#|\bML\s*#)/i);
   const blocks = parts.filter((b) => b.trim().length > 20);
   if (blocks.length > 1) return blocks;
 
@@ -30,6 +31,7 @@ export function splitSaleBlocks(rawText: string): string[] {
 
 /**
  * Extract the product line: the first meaningful line AFTER "Imprimir etiqueta".
+ * Handles "Imprimir etiqueta" appearing mid-line or on its own line.
  * Falls back to any line matching the product+price pattern.
  */
 function extractProductLine(block: string): string | null {
@@ -37,14 +39,18 @@ function extractProductLine(block: string): string | null {
   const imprimirIdx = block.search(/Imprimir\s+etiqueta/i);
   if (imprimirIdx !== -1) {
     const afterImprimir = block.slice(imprimirIdx);
-    // Skip the "Imprimir etiqueta" line itself, then grab the next meaningful content
-    const afterLabel = afterImprimir.replace(/^Imprimir\s+etiqueta\s*/i, "");
-    // Look for a line containing R$ (the product line)
-    const lineMatch = afterLabel.match(/^([^\n\r]*R\$[^\n\r]*)/m);
-    if (lineMatch) return lineMatch[1].trim();
-    // Or just take the first non-empty line
-    const firstLine = afterLabel.match(/^([^\n\r]{10,})/m);
-    if (firstLine) return firstLine[1].trim();
+    // Remove "Imprimir etiqueta" and any trailing text on the same line before newline
+    const afterLabel = afterImprimir.replace(/^.*Imprimir\s+etiqueta[^\n]*/i, "");
+    // Skip lines that are just continuation of reputation text
+    const lines = afterLabel.split(/\n/).filter((l) => {
+      const t = l.trim();
+      return t.length > 5 && !/^afetar\s+sua/i.test(t) && !/^O comprador/i.test(t) && !/^Para\s+(organizar|entregar)/i.test(t);
+    });
+    // Find first line with R$
+    const rLine = lines.find((l) => /R\$/.test(l));
+    if (rLine) return rLine.trim();
+    // Or first non-empty meaningful line
+    if (lines.length > 0) return lines[0].trim();
   }
 
   // Strategy 2: find any line with the product pattern anywhere in block
@@ -60,44 +66,55 @@ function extractProductLine(block: string): string | null {
  * Handles concatenated formats like "Luiz FelypheFELYPHELUI…"
  */
 function extractCustomer(block: string): { name: string; nickname: string; confidence: "high" | "medium" | "low" | "empty" } {
-  // Try to isolate the buyer zone
+  // Try to isolate the buyer zone between reputation text and "Iniciar conversa"
   let buyerZone = "";
 
   const reputacaoMatch = block.match(/(?:N[ãa]o\s+afeta\s+sua\s+reputa[çc][ãa]o|reputação)\s*(.*?)(?:Iniciar\s+conversa)/is);
   if (reputacaoMatch) {
     buyerZone = reputacaoMatch[1].trim();
-  } else {
-    // Fallback: look for the name+nickname pattern followed by "Iniciar conversa"
-    const fallback = block.match(/([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){0,4}[A-Z][A-Z0-9._…]{2,})\s*(?:Iniciar\s+conversa)/);
-    if (fallback) buyerZone = fallback[1].trim();
   }
 
   if (!buyerZone) {
     return { name: "", nickname: "", confidence: "empty" };
   }
 
-  // The buyer zone may look like:
-  // "Luiz FelypheFELYPHELUI…"
-  // "FRANCISCO JE… JEORGEVALI…"
-  // "Fabricio Matos N…FABRICIOMA…"
-  // Strategy: find where the uppercase/alphanumeric nickname starts
-  // The nickname is a sequence of uppercase letters/digits (possibly with dots/underscores) ending with optional "…"
+  // Real patterns from ML PDFs:
+  // "Luiz FelypheFELYPHELUI…"  → name="Luiz Felyphe", nick="FELYPHELUI"
+  // "João HenriqueHJ202501311…" → name="João Henrique", nick="HJ202501311"
+  // "Iranildo AraujoMATOSIRANI…" → name="Iranildo Araujo", nick="MATOSIRATI"
+  // "Fabricio Matos N…FABRICIOMA…" → name="Fabricio Matos N", nick="FABRICIOMA"
+  // "FRANCISCO JE…JEORGEVALI…" → name="FRANCISCO JE", nick="JEORGEVALI"
+  // "Ruderson Belar… RUDERSONB…" → name="Ruderson Belar", nick="RUDERSONB"
 
-  // Try to match: human name part + nickname part
-  const nameNickMatch = buyerZone.match(
-    /^((?:[A-ZÀ-Ú][a-zà-ú]+\s*)+?)([A-Z][A-Z0-9._]{2,}[…]?)$/
-  );
-  if (nameNickMatch) {
+  // Strategy: find the last uppercase-only sequence (3+ chars) possibly ending with …
+  // That's the nickname. Everything before it is the name.
+  
+  // Handle patterns with "…" separating name from nick, possibly with space
+  const splitByEllipsis = buyerZone.match(/^(.+?)\s*…\s*([A-Z][A-Z0-9._]{2,})…?\s*$/);
+  if (splitByEllipsis) {
     return {
-      name: nameNickMatch[1].trim(),
-      nickname: nameNickMatch[2].replace(/…$/, "").trim(),
+      name: splitByEllipsis[1].replace(/…/g, "").trim(),
+      nickname: splitByEllipsis[2].replace(/…/g, "").trim(),
       confidence: "high",
     };
   }
 
-  // Handle all-caps names like "FRANCISCO JE… JEORGEVALI…"
+  // Handle concatenated: "Luiz FelypheFELYPHELUI…" — find where uppercase block starts
+  // Look for transition from lowercase/mixed to ALL-UPPERCASE sequence
+  const concatMatch = buyerZone.match(
+    /^((?:[A-ZÀ-Ú][a-zà-ú]+\s*)+?)([A-Z][A-Z0-9._]{2,}[…]?)$/
+  );
+  if (concatMatch) {
+    return {
+      name: concatMatch[1].trim(),
+      nickname: concatMatch[2].replace(/…$/, "").trim(),
+      confidence: "high",
+    };
+  }
+
+  // Handle all-caps names: "FRANCISCO JE…JEORGEVALI…"
   const allCapsMatch = buyerZone.match(
-    /^([A-ZÀ-Ú][A-ZÀ-Ú\s.…]+?)\s+([A-Z][A-Z0-9._]{2,}[…]?)$/
+    /^([A-ZÀ-Ú][A-ZÀ-Ú\s.…]+?)\s*([A-Z][A-Z0-9._]{2,}[…]?)$/
   );
   if (allCapsMatch) {
     return {
@@ -121,8 +138,8 @@ function extractCustomer(block: string): { name: string; nickname: string; confi
 export function extractSaleFields(rawText: string): ExtractionResult {
   const confidence: Record<string, "high" | "medium" | "low" | "empty"> = {};
 
-  // === SALE NUMBER ===
-  const saleNumMatch = rawText.match(/ML\s*#\s*(\d{10,20})/i);
+  // === SALE NUMBER === (handles "ML OURINHOS #123" and "ML #123")
+  const saleNumMatch = rawText.match(/ML\s+(?:[A-ZÀ-Ú]+\s+)*#\s*(\d{10,20})/i) || rawText.match(/#\s*(\d{10,20})/);
   const saleNumber = saleNumMatch ? saleNumMatch[1] : "";
   confidence["saleNumber"] = saleNumber ? "high" : "empty";
 
@@ -130,21 +147,35 @@ export function extractSaleFields(rawText: string): ExtractionResult {
   let saleDate = "";
   let saleTime = "";
 
-  const mlDateMatch = rawText.match(
+  // Pattern with day: "18 mar 19:35 hs"
+  // Pattern without day: "mar 19:35 hs" (common in ML PDFs)
+  const mlDateWithDay = rawText.match(
     /(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)(?:\s+(\d{4}))?\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i
   );
-  if (mlDateMatch) {
-    const day = mlDateMatch[1].padStart(2, "0");
-    const monthNum = MONTH_MAP[mlDateMatch[2].toLowerCase()];
-    let year = mlDateMatch[3] || "";
+  const mlDateNoDay = rawText.match(
+    /(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i
+  );
+
+  if (mlDateWithDay) {
+    const day = mlDateWithDay[1].padStart(2, "0");
+    const monthNum = MONTH_MAP[mlDateWithDay[2].toLowerCase()];
+    let year = mlDateWithDay[3] || "";
     if (!year) {
       const now = new Date();
       const candidate = new Date(now.getFullYear(), parseInt(monthNum, 10) - 1, parseInt(day, 10));
       year = candidate > now ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
     }
     saleDate = `${year}-${monthNum}-${day}`;
-    saleTime = mlDateMatch[4];
-    confidence["saleDate"] = mlDateMatch[3] ? "high" : "medium";
+    saleTime = mlDateWithDay[4];
+    confidence["saleDate"] = mlDateWithDay[3] ? "high" : "medium";
+    confidence["saleTime"] = "high";
+  } else if (mlDateNoDay) {
+    // No day available — use month + time only
+    const monthNum = MONTH_MAP[mlDateNoDay[1].toLowerCase()];
+    const now = new Date();
+    saleDate = `${now.getFullYear()}-${monthNum}`;
+    saleTime = mlDateNoDay[2];
+    confidence["saleDate"] = "low";
     confidence["saleTime"] = "high";
   } else {
     const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
