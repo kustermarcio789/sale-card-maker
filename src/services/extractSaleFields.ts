@@ -13,10 +13,11 @@ const MONTH_MAP: Record<string, string> = {
 };
 
 /**
- * Split raw text into individual sale blocks using "ML #" as primary delimiter.
+ * Split raw text into individual sale blocks using "ML" + optional city + "#" as delimiter.
+ * Handles patterns like "ML #", "ML OURINHOS #", "ML CITY NAME #" etc.
  */
 export function splitSaleBlocks(rawText: string): string[] {
-  const parts = rawText.split(/(?=ML\s*#)/i);
+  const parts = rawText.split(/(?=ML\s+(?:[A-ZÀ-Ú]+\s+)*#|\bML\s*#)/i);
   const blocks = parts.filter((b) => b.trim().length > 20);
   if (blocks.length > 1) return blocks;
 
