@@ -6,11 +6,13 @@ import { useExtraction } from "@/contexts/ExtractionContext";
 import { mockSales } from "@/data/mockData";
 import { SaleData } from "@/types/sales";
 import { Button } from "@/components/ui/button";
-import { Eye, Download, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle, Info } from "lucide-react";
+import { Eye, Download, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { exportSalePdf, exportBatchPdf } from "@/services/pdfExportService";
 
 export default function ReviewPage() {
+  const [exporting, setExporting] = useState(false);
   const { results } = useExtraction();
 
   // Use extracted data if available, otherwise fallback to mock
@@ -26,10 +28,30 @@ export default function ReviewPage() {
     setSales((prev) => prev.map((s, i) => (i === currentIndex ? updated : s)));
   };
 
-  const handleExport = () => {
-    toast.success("PDF gerado com sucesso!", {
-      description: `Etiqueta para venda ${currentSale.saleNumber || "(sem número)"} exportada.`,
-    });
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await exportSalePdf(currentSale);
+      toast.success("PDF gerado com sucesso!", {
+        description: `Etiqueta para venda ${currentSale.saleNumber || "(sem número)"} exportada.`,
+      });
+    } catch (e) {
+      toast.error("Erro ao gerar PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleBatchExport = async () => {
+    setExporting(true);
+    try {
+      await exportBatchPdf(sales);
+      toast.success(`${sales.length} etiquetas exportadas em lote!`);
+    } catch (e) {
+      toast.error("Erro ao gerar PDF em lote");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const confidenceColor = (level: string) => {
@@ -121,8 +143,8 @@ export default function ReviewPage() {
                 <Eye className="w-4 h-4 mr-2" />
                 Preview PDF
               </Button>
-              <Button className="flex-1 gradient-primary text-primary-foreground" onClick={handleExport}>
-                <Download className="w-4 h-4 mr-2" />
+              <Button className="flex-1 gradient-primary text-primary-foreground" onClick={handleExport} disabled={exporting}>
+                {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
                 Exportar PDF
               </Button>
             </div>
@@ -150,9 +172,10 @@ export default function ReviewPage() {
             </div>
             <Button
               className="gradient-accent text-accent-foreground"
-              onClick={() => toast.success(`${sales.length} etiquetas exportadas em lote!`)}
+              onClick={handleBatchExport}
+              disabled={exporting}
             >
-              <CheckCircle className="w-4 h-4 mr-2" />
+              {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
               Exportar Todas ({sales.length})
             </Button>
           </div>
