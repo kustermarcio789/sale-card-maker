@@ -31,6 +31,7 @@ export function splitSaleBlocks(rawText: string): string[] {
 
 /**
  * Extract the product line: the first meaningful line AFTER "Imprimir etiqueta".
+ * Handles "Imprimir etiqueta" appearing mid-line or on its own line.
  * Falls back to any line matching the product+price pattern.
  */
 function extractProductLine(block: string): string | null {
@@ -38,14 +39,18 @@ function extractProductLine(block: string): string | null {
   const imprimirIdx = block.search(/Imprimir\s+etiqueta/i);
   if (imprimirIdx !== -1) {
     const afterImprimir = block.slice(imprimirIdx);
-    // Skip the "Imprimir etiqueta" line itself, then grab the next meaningful content
-    const afterLabel = afterImprimir.replace(/^Imprimir\s+etiqueta\s*/i, "");
-    // Look for a line containing R$ (the product line)
-    const lineMatch = afterLabel.match(/^([^\n\r]*R\$[^\n\r]*)/m);
-    if (lineMatch) return lineMatch[1].trim();
-    // Or just take the first non-empty line
-    const firstLine = afterLabel.match(/^([^\n\r]{10,})/m);
-    if (firstLine) return firstLine[1].trim();
+    // Remove "Imprimir etiqueta" and any trailing text on the same line before newline
+    const afterLabel = afterImprimir.replace(/^.*Imprimir\s+etiqueta[^\n]*/i, "");
+    // Skip lines that are just continuation of reputation text
+    const lines = afterLabel.split(/\n/).filter((l) => {
+      const t = l.trim();
+      return t.length > 5 && !/^afetar\s+sua/i.test(t) && !/^O comprador/i.test(t) && !/^Para\s+(organizar|entregar)/i.test(t);
+    });
+    // Find first line with R$
+    const rLine = lines.find((l) => /R\$/.test(l));
+    if (rLine) return rLine.trim();
+    // Or first non-empty meaningful line
+    if (lines.length > 0) return lines[0].trim();
   }
 
   // Strategy 2: find any line with the product pattern anywhere in block
