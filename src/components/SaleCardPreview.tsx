@@ -50,9 +50,6 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
               <span>{sale.customerNickname}</span>
             </div>
           </div>
-          {sale.amount && (
-            <p className="text-sm font-bold text-accent">R$ {sale.amount.toFixed(2)}</p>
-          )}
         </div>
 
         {/* Right codes */}
