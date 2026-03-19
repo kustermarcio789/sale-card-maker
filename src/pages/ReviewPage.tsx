@@ -172,9 +172,10 @@ export default function ReviewPage() {
             </div>
             <Button
               className="gradient-accent text-accent-foreground"
-              onClick={() => toast.success(`${sales.length} etiquetas exportadas em lote!`)}
+              onClick={handleBatchExport}
+              disabled={exporting}
             >
-              <CheckCircle className="w-4 h-4 mr-2" />
+              {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
               Exportar Todas ({sales.length})
             </Button>
           </div>
