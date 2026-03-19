@@ -58,12 +58,13 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
             <div className="w-20 h-10 bg-foreground/5 rounded border border-border flex items-center justify-center">
               <span className="text-[8px] font-mono text-muted-foreground">BARCODE</span>
             </div>
-            <p className="text-[8px] text-muted-foreground mt-1 font-mono">{sale.barcodeValue}</p>
+            <p className="text-[8px] text-muted-foreground mt-1 font-mono">{sale.sku || "—"}</p>
           </div>
           <div className="text-center">
             <div className="w-14 h-14 bg-foreground/5 rounded border border-border flex items-center justify-center">
               <span className="text-[8px] font-mono text-muted-foreground">QR</span>
             </div>
+            <p className="text-[8px] text-muted-foreground mt-1 font-mono">{sale.sku || "—"}</p>
           </div>
         </div>
       </div>

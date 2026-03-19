@@ -24,8 +24,6 @@ export function SaleForm({ sale, onChange, confidence }: SaleFormProps) {
     { key: "sku", label: "SKU" },
     { key: "quantity", label: "Quantidade", type: "number" },
     { key: "amount", label: "Valor (R$)", type: "number" },
-    { key: "barcodeValue", label: "Código de Barras" },
-    { key: "qrcodeValue", label: "QR Code URL" },
     { key: "productImageUrl", label: "URL da Imagem" },
   ];
 
