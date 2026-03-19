@@ -127,8 +127,8 @@ function extractCustomer(block: string): { name: string; nickname: string; confi
 export function extractSaleFields(rawText: string): ExtractionResult {
   const confidence: Record<string, "high" | "medium" | "low" | "empty"> = {};
 
-  // === SALE NUMBER ===
-  const saleNumMatch = rawText.match(/ML\s*#\s*(\d{10,20})/i);
+  // === SALE NUMBER === (handles "ML OURINHOS #123" and "ML #123")
+  const saleNumMatch = rawText.match(/ML\s+(?:[A-ZÀ-Ú]+\s+)*#\s*(\d{10,20})/i) || rawText.match(/#\s*(\d{10,20})/);
   const saleNumber = saleNumMatch ? saleNumMatch[1] : "";
   confidence["saleNumber"] = saleNumber ? "high" : "empty";
 
@@ -136,21 +136,35 @@ export function extractSaleFields(rawText: string): ExtractionResult {
   let saleDate = "";
   let saleTime = "";
 
-  const mlDateMatch = rawText.match(
+  // Pattern with day: "18 mar 19:35 hs"
+  // Pattern without day: "mar 19:35 hs" (common in ML PDFs)
+  const mlDateWithDay = rawText.match(
     /(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)(?:\s+(\d{4}))?\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i
   );
-  if (mlDateMatch) {
-    const day = mlDateMatch[1].padStart(2, "0");
-    const monthNum = MONTH_MAP[mlDateMatch[2].toLowerCase()];
-    let year = mlDateMatch[3] || "";
+  const mlDateNoDay = rawText.match(
+    /(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i
+  );
+
+  if (mlDateWithDay) {
+    const day = mlDateWithDay[1].padStart(2, "0");
+    const monthNum = MONTH_MAP[mlDateWithDay[2].toLowerCase()];
+    let year = mlDateWithDay[3] || "";
     if (!year) {
       const now = new Date();
       const candidate = new Date(now.getFullYear(), parseInt(monthNum, 10) - 1, parseInt(day, 10));
       year = candidate > now ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
     }
     saleDate = `${year}-${monthNum}-${day}`;
-    saleTime = mlDateMatch[4];
-    confidence["saleDate"] = mlDateMatch[3] ? "high" : "medium";
+    saleTime = mlDateWithDay[4];
+    confidence["saleDate"] = mlDateWithDay[3] ? "high" : "medium";
+    confidence["saleTime"] = "high";
+  } else if (mlDateNoDay) {
+    // No day available — use month + time only
+    const monthNum = MONTH_MAP[mlDateNoDay[1].toLowerCase()];
+    const now = new Date();
+    saleDate = `${now.getFullYear()}-${monthNum}`;
+    saleTime = mlDateNoDay[2];
+    confidence["saleDate"] = "low";
     confidence["saleTime"] = "high";
   } else {
     const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
