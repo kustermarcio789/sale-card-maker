@@ -66,14 +66,21 @@ export function extractSaleFields(rawText: string): ExtractionResult {
   let saleTime = "";
 
   // Try ML short date: "18 mar 19:35 hs"
-  const mlDateMatch = rawText.match(/(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i);
+  // Try ML short date with optional year: "18 mar 2025 19:35 hs" or "18 mar 19:35 hs"
+  const mlDateMatch = rawText.match(/(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)(?:\s+(\d{4}))?\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i);
   if (mlDateMatch) {
     const day = mlDateMatch[1].padStart(2, "0");
     const monthNum = MONTH_MAP[mlDateMatch[2].toLowerCase()];
-    const year = new Date().getFullYear().toString();
+    // Use explicit year if present, otherwise infer: if date is in future, use last year
+    let year = mlDateMatch[3] || "";
+    if (!year) {
+      const now = new Date();
+      const candidateDate = new Date(now.getFullYear(), parseInt(monthNum, 10) - 1, parseInt(day, 10));
+      year = candidateDate > now ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
+    }
     saleDate = `${year}-${monthNum}-${day}`;
-    saleTime = mlDateMatch[3];
-    confidence["saleDate"] = "high";
+    saleTime = mlDateMatch[4];
+    confidence["saleDate"] = mlDateMatch[3] ? "high" : "medium";
     confidence["saleTime"] = "high";
   } else {
     // Fallback: dd/mm/yyyy or yyyy-mm-dd

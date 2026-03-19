@@ -73,7 +73,12 @@ export default function ReviewPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Conferência</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-foreground">Conferência</h1>
+              <Badge variant="secondary" className="text-xs">
+                {sales.length} venda{sales.length !== 1 ? "s" : ""} detectada{sales.length !== 1 ? "s" : ""}
+              </Badge>
+            </div>
             <p className="text-sm text-muted-foreground mt-1">
               {hasRealData
                 ? "Dados extraídos do arquivo enviado — revise antes de exportar"
