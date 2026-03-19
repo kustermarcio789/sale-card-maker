@@ -1,7 +1,7 @@
 import { SaleData } from "@/types/sales";
 import { parsePdfText, pdfHasText } from "./pdfParser";
 import { runOCR } from "./ocrService";
-import { extractSaleFields } from "./extractSaleFields";
+import { extractSaleFields, extractMultipleSales } from "./extractSaleFields";
 
 export interface ProcessingResult {
   sale: SaleData;
@@ -12,12 +12,12 @@ export interface ProcessingResult {
 
 /**
  * Process an uploaded file and extract sale data
- * Automatically chooses between PDF text parsing and OCR
+ * Supports multiple sales per file (common in ML PDFs)
  */
 export async function processFile(
   file: File,
   onProgress?: (status: string, progress: number) => void
-): Promise<ProcessingResult> {
+): Promise<ProcessingResult[]> {
   const isPdf = file.type === "application/pdf";
   const isImage = file.type.startsWith("image/");
 
@@ -51,11 +51,18 @@ export async function processFile(
   }
 
   onProgress?.("Extraindo campos da venda...", 85);
-  const { sale, confidence } = extractSaleFields(rawText);
+
+  // Try to extract multiple sales from the text
+  const extractions = extractMultipleSales(rawText);
 
   onProgress?.("Processamento concluído", 100);
 
-  return { sale, rawText, confidence, method };
+  return extractions.map((ext) => ({
+    sale: ext.sale,
+    rawText: ext.rawText,
+    confidence: ext.confidence,
+    method,
+  }));
 }
 
 /**
@@ -73,8 +80,8 @@ export async function processFiles(
       onProgress?.(`[${i + 1}/${files.length}] ${status}`, overall);
     };
 
-    const result = await processFile(files[i], fileProgress);
-    results.push(result);
+    const fileResults = await processFile(files[i], fileProgress);
+    results.push(...fileResults);
   }
 
   return results;
