@@ -143,8 +143,8 @@ export default function ReviewPage() {
                 <Eye className="w-4 h-4 mr-2" />
                 Preview PDF
               </Button>
-              <Button className="flex-1 gradient-primary text-primary-foreground" onClick={handleExport}>
-                <Download className="w-4 h-4 mr-2" />
+              <Button className="flex-1 gradient-primary text-primary-foreground" onClick={handleExport} disabled={exporting}>
+                {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
                 Exportar PDF
               </Button>
             </div>
