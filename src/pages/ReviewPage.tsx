@@ -28,10 +28,30 @@ export default function ReviewPage() {
     setSales((prev) => prev.map((s, i) => (i === currentIndex ? updated : s)));
   };
 
-  const handleExport = () => {
-    toast.success("PDF gerado com sucesso!", {
-      description: `Etiqueta para venda ${currentSale.saleNumber || "(sem número)"} exportada.`,
-    });
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await exportSalePdf(currentSale);
+      toast.success("PDF gerado com sucesso!", {
+        description: `Etiqueta para venda ${currentSale.saleNumber || "(sem número)"} exportada.`,
+      });
+    } catch (e) {
+      toast.error("Erro ao gerar PDF");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleBatchExport = async () => {
+    setExporting(true);
+    try {
+      await exportBatchPdf(sales);
+      toast.success(`${sales.length} etiquetas exportadas em lote!`);
+    } catch (e) {
+      toast.error("Erro ao gerar PDF em lote");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const confidenceColor = (level: string) => {
