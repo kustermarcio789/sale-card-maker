@@ -8,6 +8,8 @@ import DashboardPage from "./pages/DashboardPage";
 import UploadPage from "./pages/UploadPage";
 import ReviewPage from "./pages/ReviewPage";
 import HistoryPage from "./pages/HistoryPage";
+import MercadoLivrePage from "./pages/MercadoLivrePage";
+import MLCallbackPage from "./pages/MLCallbackPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
