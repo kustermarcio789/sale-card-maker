@@ -6,7 +6,6 @@ interface ExtractionResult {
   confidence: Record<string, "high" | "medium" | "low" | "empty">;
 }
 
-// Month abbreviation mapping for Portuguese
 const MONTH_MAP: Record<string, string> = {
   jan: "01", fev: "02", mar: "03", abr: "04",
   mai: "05", jun: "06", jul: "07", ago: "08",
@@ -14,10 +13,9 @@ const MONTH_MAP: Record<string, string> = {
 };
 
 /**
- * Split raw text into individual sale blocks using ML # or "Imprimir etiqueta" as delimiters
+ * Split raw text into individual sale blocks using "ML #" as primary delimiter.
  */
 export function splitSaleBlocks(rawText: string): string[] {
-  // Split by "ML #" keeping the delimiter
   const parts = rawText.split(/(?=ML\s*#)/i);
   const blocks = parts.filter((b) => b.trim().length > 20);
   if (blocks.length > 1) return blocks;
@@ -27,166 +25,237 @@ export function splitSaleBlocks(rawText: string): string[] {
   const blocks2 = parts2.filter((b) => b.trim().length > 20);
   if (blocks2.length > 1) return blocks2;
 
-  // No split possible — treat entire text as one sale
   return [rawText];
 }
 
 /**
- * Extract sale fields from raw text using regex patterns
- * tailored for Mercado Livre sale documents
+ * Extract the product line: the first meaningful line AFTER "Imprimir etiqueta".
+ * Falls back to any line matching the product+price pattern.
+ */
+function extractProductLine(block: string): string | null {
+  // Strategy 1: find text after "Imprimir etiqueta"
+  const imprimirIdx = block.search(/Imprimir\s+etiqueta/i);
+  if (imprimirIdx !== -1) {
+    const afterImprimir = block.slice(imprimirIdx);
+    // Skip the "Imprimir etiqueta" line itself, then grab the next meaningful content
+    const afterLabel = afterImprimir.replace(/^Imprimir\s+etiqueta\s*/i, "");
+    // Look for a line containing R$ (the product line)
+    const lineMatch = afterLabel.match(/^([^\n\r]*R\$[^\n\r]*)/m);
+    if (lineMatch) return lineMatch[1].trim();
+    // Or just take the first non-empty line
+    const firstLine = afterLabel.match(/^([^\n\r]{10,})/m);
+    if (firstLine) return firstLine[1].trim();
+  }
+
+  // Strategy 2: find any line with the product pattern anywhere in block
+  const productPattern = block.match(/^(.{5,}?)\s+R\$\s*[\d.,]+\s*\d+\s*unidades?/im);
+  if (productPattern) return productPattern[0].trim();
+
+  return null;
+}
+
+/**
+ * Extract customer name and nickname from the zone between
+ * "Não afeta sua reputação" and "Iniciar conversa".
+ * Handles concatenated formats like "Luiz FelypheFELYPHELUI…"
+ */
+function extractCustomer(block: string): { name: string; nickname: string; confidence: "high" | "medium" | "low" | "empty" } {
+  // Try to isolate the buyer zone
+  let buyerZone = "";
+
+  const reputacaoMatch = block.match(/(?:N[ãa]o\s+afeta\s+sua\s+reputa[çc][ãa]o|reputação)\s*(.*?)(?:Iniciar\s+conversa)/is);
+  if (reputacaoMatch) {
+    buyerZone = reputacaoMatch[1].trim();
+  } else {
+    // Fallback: look for the name+nickname pattern followed by "Iniciar conversa"
+    const fallback = block.match(/([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){0,4}[A-Z][A-Z0-9._…]{2,})\s*(?:Iniciar\s+conversa)/);
+    if (fallback) buyerZone = fallback[1].trim();
+  }
+
+  if (!buyerZone) {
+    return { name: "", nickname: "", confidence: "empty" };
+  }
+
+  // The buyer zone may look like:
+  // "Luiz FelypheFELYPHELUI…"
+  // "FRANCISCO JE… JEORGEVALI…"
+  // "Fabricio Matos N…FABRICIOMA…"
+  // Strategy: find where the uppercase/alphanumeric nickname starts
+  // The nickname is a sequence of uppercase letters/digits (possibly with dots/underscores) ending with optional "…"
+
+  // Try to match: human name part + nickname part
+  const nameNickMatch = buyerZone.match(
+    /^((?:[A-ZÀ-Ú][a-zà-ú]+\s*)+?)([A-Z][A-Z0-9._]{2,}[…]?)$/
+  );
+  if (nameNickMatch) {
+    return {
+      name: nameNickMatch[1].trim(),
+      nickname: nameNickMatch[2].replace(/…$/, "").trim(),
+      confidence: "high",
+    };
+  }
+
+  // Handle all-caps names like "FRANCISCO JE… JEORGEVALI…"
+  const allCapsMatch = buyerZone.match(
+    /^([A-ZÀ-Ú][A-ZÀ-Ú\s.…]+?)\s+([A-Z][A-Z0-9._]{2,}[…]?)$/
+  );
+  if (allCapsMatch) {
+    return {
+      name: allCapsMatch[1].replace(/…/g, "").trim(),
+      nickname: allCapsMatch[2].replace(/…$/, "").trim(),
+      confidence: "medium",
+    };
+  }
+
+  // Last resort: treat entire zone as name
+  return {
+    name: buyerZone.replace(/…/g, "").trim(),
+    nickname: "",
+    confidence: "low",
+  };
+}
+
+/**
+ * Extract sale fields from a single block of text (one sale).
  */
 export function extractSaleFields(rawText: string): ExtractionResult {
   const confidence: Record<string, "high" | "medium" | "low" | "empty"> = {};
 
-  const extract = (
-    field: string,
-    patterns: RegExp[],
-    fallback = ""
-  ): string => {
-    for (const pattern of patterns) {
-      const match = rawText.match(pattern);
-      if (match && match[1]?.trim()) {
-        confidence[field] = "high";
-        return match[1].trim();
-      }
-    }
-    confidence[field] = fallback ? "low" : "empty";
-    return fallback;
-  };
+  // === SALE NUMBER ===
+  const saleNumMatch = rawText.match(/ML\s*#\s*(\d{10,20})/i);
+  const saleNumber = saleNumMatch ? saleNumMatch[1] : "";
+  confidence["saleNumber"] = saleNumber ? "high" : "empty";
 
-  // Sale number — ML format: "ML #200001210464639118"
-  const saleNumber = extract("saleNumber", [
-    /ML\s*#\s*(\d{10,20})/i,
-    /(?:venda|pedido|order|compra)[:\s#]*(\d{10,20})/i,
-    /(?:Nº|N°|numero|número)[:\s]*(\d{10,20})/i,
-  ]);
-
-  // Date + Time — "18 mar 19:35 hs" format
+  // === DATE + TIME ===
   let saleDate = "";
   let saleTime = "";
 
-  // Try ML short date: "18 mar 19:35 hs"
-  // Try ML short date with optional year: "18 mar 2025 19:35 hs" or "18 mar 19:35 hs"
-  const mlDateMatch = rawText.match(/(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)(?:\s+(\d{4}))?\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i);
+  const mlDateMatch = rawText.match(
+    /(\d{1,2})\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)(?:\s+(\d{4}))?\s+(\d{1,2}:\d{2})\s*(?:hs?)?/i
+  );
   if (mlDateMatch) {
     const day = mlDateMatch[1].padStart(2, "0");
     const monthNum = MONTH_MAP[mlDateMatch[2].toLowerCase()];
-    // Use explicit year if present, otherwise infer: if date is in future, use last year
     let year = mlDateMatch[3] || "";
     if (!year) {
       const now = new Date();
-      const candidateDate = new Date(now.getFullYear(), parseInt(monthNum, 10) - 1, parseInt(day, 10));
-      year = candidateDate > now ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
+      const candidate = new Date(now.getFullYear(), parseInt(monthNum, 10) - 1, parseInt(day, 10));
+      year = candidate > now ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
     }
     saleDate = `${year}-${monthNum}-${day}`;
     saleTime = mlDateMatch[4];
     confidence["saleDate"] = mlDateMatch[3] ? "high" : "medium";
     confidence["saleTime"] = "high";
   } else {
-    // Fallback: dd/mm/yyyy or yyyy-mm-dd
-    saleDate = extract("saleDate", [
-      /(\d{2}\/\d{2}\/\d{4})/,
-      /(\d{4}-\d{2}-\d{2})/,
-      /(\d{2}\s+de\s+\w+\s+de\s+\d{4})/i,
-    ]);
-    // Normalize DD/MM/YYYY to YYYY-MM-DD
-    const dateMatch = saleDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
     if (dateMatch) {
       saleDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+      confidence["saleDate"] = "high";
+    } else {
+      const isoMatch = rawText.match(/(\d{4}-\d{2}-\d{2})/);
+      saleDate = isoMatch ? isoMatch[1] : "";
+      confidence["saleDate"] = isoMatch ? "high" : "empty";
     }
-
-    saleTime = extract("saleTime", [
-      /(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:h|hs)?/i,
-    ]);
+    const timeMatch = rawText.match(/(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:h|hs)?/i);
+    saleTime = timeMatch ? timeMatch[1] : "";
+    confidence["saleTime"] = saleTime ? "high" : "empty";
   }
 
-  // Customer name + nickname
-  // Pattern: "Name SurnameNICKNAME… Iniciar conversa"
-  // e.g. "Luiz FelypheFELYPHELUI…" or "João HenriqueHJ202501311…"
-  let customerName = "";
-  let customerNickname = "";
+  // === CUSTOMER NAME + NICKNAME ===
+  const customer = extractCustomer(rawText);
+  const customerName = customer.name;
+  const customerNickname = customer.nickname;
+  confidence["customerName"] = customer.confidence;
+  confidence["customerNickname"] = customer.nickname ? customer.confidence : "empty";
 
-  const buyerMatch = rawText.match(
-    /([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){0,4})([A-Z][A-Z0-9._]{2,}[…]?)\s*(?:Iniciar\s+conversa)?/
-  );
-  if (buyerMatch) {
-    customerName = buyerMatch[1].trim();
-    customerNickname = buyerMatch[2].replace(/…$/, "").trim();
-    confidence["customerName"] = "high";
-    confidence["customerNickname"] = "high";
-  } else {
-    customerName = extract("customerName", [
-      /(?:comprador|cliente|buyer|destinat[áa]rio)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,5})/,
-      /(?:nome|name)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,5})/i,
-    ]);
-    customerNickname = extract("customerNickname", [
-      /(?:nickname|apelido|usuário|user)[:\s]+([A-Z0-9._-]+)/i,
-      /\(([A-Z][A-Z0-9._]{2,})\)/,
-    ]);
-  }
-
-  // Product name + amount + quantity + SKU from ML pattern:
-  // "Suporte Olho De Gato - Ecoferro R$ 26 1 unidade SKU: EC007"
+  // === PRODUCT (from line after "Imprimir etiqueta") ===
   let productName = "";
   let amount: number | undefined;
   let sku = "";
-  let quantityStr = "1";
+  let quantity = 1;
 
-  const productLineMatch = rawText.match(
-    /([A-ZÀ-Ú][^\n\r]{5,}?)\s+R\$\s*([\d.,]+)\s*(\d+)\s*unidades?\s+SKU:\s*([A-Z0-9_-]+)/i
-  );
-  if (productLineMatch) {
-    productName = productLineMatch[1].trim();
-    amount = parseFloat(productLineMatch[2].replace(/\./g, "").replace(",", "."));
-    quantityStr = productLineMatch[3];
-    sku = productLineMatch[4];
-    confidence["productName"] = "high";
-    confidence["amount"] = "high";
-    confidence["quantity"] = "high";
-    confidence["sku"] = "high";
-  } else {
-    // Fallback: try to extract product name before "R$"
-    const prodBeforeR = rawText.match(/([A-ZÀ-Ú][^\n\r]{5,}?)\s+R\$/i);
-    if (prodBeforeR) {
-      productName = prodBeforeR[1].trim();
-      confidence["productName"] = "medium";
+  const productLine = extractProductLine(rawText);
+
+  if (productLine) {
+    // Full pattern: "Name R$ 26 1 unidade SKU: EC007"
+    const fullMatch = productLine.match(
+      /^(.+?)\s+R\$\s*([\d.,]+)\s*(\d+)\s*unidades?\s+SKU:\s*([A-Z0-9_-]+)/i
+    );
+    if (fullMatch) {
+      productName = fullMatch[1].trim();
+      amount = parseFloat(fullMatch[2].replace(/\./g, "").replace(",", "."));
+      quantity = parseInt(fullMatch[3], 10) || 1;
+      sku = fullMatch[4];
+      confidence["productName"] = "high";
+      confidence["amount"] = "high";
+      confidence["quantity"] = "high";
+      confidence["sku"] = "high";
     } else {
-      productName = extract("productName", [
-        /(?:produto|product|item|título|title)[:\s]+(.{10,120})/i,
-        /(?:descrição|description)[:\s]+(.{10,120})/i,
-      ]);
+      // Without SKU: "Name R$ 26 1 unidade"
+      const noSkuMatch = productLine.match(
+        /^(.+?)\s+R\$\s*([\d.,]+)\s*(\d+)\s*unidades?/i
+      );
+      if (noSkuMatch) {
+        productName = noSkuMatch[1].trim();
+        amount = parseFloat(noSkuMatch[2].replace(/\./g, "").replace(",", "."));
+        quantity = parseInt(noSkuMatch[3], 10) || 1;
+        confidence["productName"] = "high";
+        confidence["amount"] = "high";
+        confidence["quantity"] = "high";
+      } else {
+        // Just name before R$
+        const nameOnly = productLine.match(/^(.+?)\s+R\$/i);
+        if (nameOnly) {
+          productName = nameOnly[1].trim();
+          confidence["productName"] = "medium";
+        } else {
+          productName = productLine.slice(0, 120);
+          confidence["productName"] = "low";
+        }
+
+        const amtMatch = productLine.match(/R\$\s*([\d.,]+)/);
+        if (amtMatch) {
+          amount = parseFloat(amtMatch[1].replace(/\./g, "").replace(",", "."));
+          confidence["amount"] = "high";
+        }
+
+        const qtyMatch = productLine.match(/(\d+)\s*unidades?/i);
+        quantity = qtyMatch ? parseInt(qtyMatch[1], 10) || 1 : 1;
+      }
+
+      // Try standalone SKU
+      const skuMatch = productLine.match(/SKU:\s*([A-Z0-9_-]+)/i) || rawText.match(/SKU:\s*([A-Z0-9_-]+)/i);
+      sku = skuMatch ? skuMatch[1] : "";
+      confidence["sku"] = sku ? "high" : "empty";
     }
+  } else {
+    // No product line found — try global fallbacks
+    const globalProduct = rawText.match(/(.{5,}?)\s+R\$\s*([\d.,]+)/i);
+    if (globalProduct) {
+      // Ensure we're not grabbing the header line
+      const candidate = globalProduct[1].trim();
+      if (!/ML\s*#/i.test(candidate) && !/\d{1,2}\s+(jan|fev|mar|abr|mai)/i.test(candidate)) {
+        productName = candidate;
+        amount = parseFloat(globalProduct[2].replace(/\./g, "").replace(",", "."));
+        confidence["productName"] = "low";
+        confidence["amount"] = "medium";
+      }
+    }
+    confidence["productName"] = confidence["productName"] || "empty";
+    confidence["amount"] = confidence["amount"] || "empty";
 
-    // SKU
-    sku = sku || extract("sku", [
-      /SKU[:\s]+([A-Z0-9_-]{3,30})/i,
-      /(?:cod|código)[:\s]+([A-Z0-9_-]{3,30})/i,
-      /(?:MLB|MLA|MLM)[\s-]?(\d{6,15})/i,
-    ]);
-
-    // Quantity
-    quantityStr = extract("quantity", [
-      /(?:quantidade|qty|qtd|qtde)[:\s]+(\d+)/i,
-      /(\d+)\s*(?:unidade|unidades|un\.)/i,
-    ], "1");
-
-    // Amount
-    const amountStr = extract("amount", [
-      /R\$\s*([\d.,]+)/,
-      /(?:valor|total|preço|price|amount)[:\s]*R?\$?\s*([\d.,]+)/i,
-    ]);
-    amount = amountStr
-      ? parseFloat(amountStr.replace(/\./g, "").replace(",", "."))
-      : undefined;
+    const skuMatch = rawText.match(/SKU:\s*([A-Z0-9_-]+)/i);
+    sku = skuMatch ? skuMatch[1] : "";
+    confidence["sku"] = sku ? "high" : "empty";
   }
 
-  const quantity = parseInt(quantityStr, 10) || 1;
+  confidence["quantity"] = confidence["quantity"] || (quantity > 1 ? "high" : "low");
 
-  // Barcode and QR code are both derived from SKU
+  // Barcode and QR code derived from SKU (optional — never critical error)
   const barcodeValue = sku;
   const qrcodeValue = sku;
-  confidence["barcodeValue"] = sku ? "high" : "empty";
-  confidence["qrcodeValue"] = sku ? "high" : "empty";
+  confidence["barcodeValue"] = sku ? "high" : "low";
+  confidence["qrcodeValue"] = sku ? "high" : "low";
 
   const sale: SaleData = {
     id: crypto.randomUUID(),
