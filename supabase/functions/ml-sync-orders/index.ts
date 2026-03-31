@@ -14,16 +14,22 @@ async function ensureValidToken(supabase: any, connection: any, clientId: string
   // Refresh
   const res = await fetch("https://api.mercadolibre.com/oauth/token", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: clientId,
       client_secret: clientSecret,
       refresh_token: connection.refresh_token,
-    }),
+    }).toString(),
   });
 
-  if (!res.ok) throw new Error("Token refresh failed");
+  if (!res.ok) {
+    const details = await res.text();
+    throw new Error(`Token refresh failed: ${details}`);
+  }
 
   const data = await res.json();
   const newExpiry = new Date(Date.now() + data.expires_in * 1000).toISOString();

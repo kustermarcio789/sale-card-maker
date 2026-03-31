@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { exchangeMLCode } from "@/services/mercadoLivreService";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { exchangeMLCode } from "@/services/mercadoLivreService";
+import {
+  clearStoredMLOAuthSession,
+  getStoredMLOAuthSession,
+} from "@/services/mlOAuth";
 
 export default function MLCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -12,7 +16,20 @@ export default function MLCallbackPage() {
   useEffect(() => {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
-    const savedState = sessionStorage.getItem("ml_oauth_state");
+    const oauthError = searchParams.get("error");
+    const oauthErrorDescription = searchParams.get("error_description");
+    const oauthSession = getStoredMLOAuthSession();
+
+    if (oauthError) {
+      clearStoredMLOAuthSession();
+      setStatus("error");
+      setMessage(
+        decodeURIComponent(
+          oauthErrorDescription || `O Mercado Livre recusou a autorização (${oauthError}).`
+        )
+      );
+      return;
+    }
 
     if (!code) {
       setStatus("error");
@@ -20,39 +37,50 @@ export default function MLCallbackPage() {
       return;
     }
 
-    if (state && savedState && state !== savedState) {
+    if (!oauthSession) {
+      setStatus("error");
+      setMessage("Sessão de autorização expirada. Inicie a conexão novamente.");
+      return;
+    }
+
+    if (state && oauthSession.state !== state) {
+      clearStoredMLOAuthSession();
       setStatus("error");
       setMessage("Estado de segurança inválido. Tente novamente.");
       return;
     }
 
-    sessionStorage.removeItem("ml_oauth_state");
-
-    exchangeMLCode(code)
+    exchangeMLCode({
+      code,
+      redirectUri: oauthSession.redirectUri,
+      codeVerifier: oauthSession.codeVerifier,
+    })
       .then(() => {
+        clearStoredMLOAuthSession();
         setStatus("success");
         setMessage("Conta conectada com sucesso!");
         setTimeout(() => navigate("/mercado-livre"), 2000);
       })
       .catch((err) => {
+        clearStoredMLOAuthSession();
         setStatus("error");
         setMessage(err.message || "Erro ao conectar conta.");
       });
-  }, [searchParams, navigate]);
+  }, [navigate, searchParams]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="glass-card p-8 max-w-md w-full text-center space-y-4">
+      <div className="glass-card w-full max-w-md space-y-4 p-8 text-center">
         {status === "loading" && (
-          <Loader2 className="w-12 h-12 text-primary mx-auto animate-spin" />
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
         )}
         {status === "success" && (
-          <CheckCircle className="w-12 h-12 text-success mx-auto" />
+          <CheckCircle className="mx-auto h-12 w-12 text-success" />
         )}
         {status === "error" && (
-          <XCircle className="w-12 h-12 text-destructive mx-auto" />
+          <XCircle className="mx-auto h-12 w-12 text-destructive" />
         )}
-        <p className="text-foreground font-medium">{message}</p>
+        <p className="font-medium text-foreground">{message}</p>
         {status === "error" && (
           <button
             onClick={() => navigate("/mercado-livre")}

@@ -1,4 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  createMLOAuthSession,
+  resolveMLRedirectUri,
+} from "@/services/mlOAuth";
 
 export interface MLConnection {
   id: string;
@@ -24,6 +28,40 @@ export interface MLOrder {
   order_status: string | null;
 }
 
+async function getFunctionsErrorMessage(
+  error: unknown,
+  fallbackMessage: string
+): Promise<string> {
+  if (error && typeof error === "object" && "context" in error) {
+    const context = (error as { context?: Response }).context;
+    if (context && typeof context.text === "function") {
+      try {
+        const bodyText = await context.text();
+        if (bodyText) {
+          try {
+            const body = JSON.parse(bodyText) as {
+              error?: string;
+              details?: string;
+              message?: string;
+            };
+            return body.details || body.error || body.message || fallbackMessage;
+          } catch {
+            return bodyText;
+          }
+        }
+      } catch {
+        // Ignore parsing errors and use fallback below.
+      }
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
+
 export async function getMLConnectionStatus(): Promise<MLConnection | null> {
   const { data } = await supabase.functions.invoke("ml-auth", {
     body: { action: "status" },
@@ -32,27 +70,47 @@ export async function getMLConnectionStatus(): Promise<MLConnection | null> {
 }
 
 export async function startMLOAuth(): Promise<string> {
-  const redirectUri = `${window.location.origin}/ml-callback`;
-  const state = crypto.randomUUID();
-  sessionStorage.setItem("ml_oauth_state", state);
-
+  const { redirectUri, state, codeChallenge } = await createMLOAuthSession();
   const { data, error } = await supabase.functions.invoke("ml-auth", {
-    body: { action: "get_auth_url", redirect_uri: redirectUri, state },
+    body: {
+      action: "get_auth_url",
+      redirect_uri: redirectUri,
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+    },
   });
 
-  if (error || !data?.url) throw new Error("Failed to get auth URL");
+  if (error || !data?.url) {
+    throw new Error(
+      await getFunctionsErrorMessage(error, "Não foi possível iniciar a conexão com o Mercado Livre.")
+    );
+  }
+
   return data.url;
 }
 
-export async function exchangeMLCode(code: string): Promise<MLConnection> {
-  const redirectUri = `${window.location.origin}/ml-callback`;
-
+export async function exchangeMLCode(params: {
+  code: string;
+  redirectUri?: string;
+  codeVerifier?: string;
+}): Promise<MLConnection> {
+  const redirectUri = params.redirectUri || resolveMLRedirectUri();
   const { data, error } = await supabase.functions.invoke("ml-auth", {
-    body: { action: "exchange_code", code, redirect_uri: redirectUri },
+    body: {
+      action: "exchange_code",
+      code: params.code,
+      redirect_uri: redirectUri,
+      code_verifier: params.codeVerifier,
+    },
   });
 
   if (error || !data?.success) {
-    throw new Error(data?.error || "Failed to exchange code");
+    throw new Error(
+      data?.details ||
+        data?.error ||
+        (await getFunctionsErrorMessage(error, "Não foi possível concluir a conexão com o Mercado Livre."))
+    );
   }
   return data.connection;
 }

@@ -25,11 +25,40 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    const { action, code, redirect_uri, state } = await req.json();
+    const body = await req.json();
+    const {
+      action,
+      code,
+      redirect_uri,
+      state,
+      connection_id,
+      code_verifier,
+      code_challenge,
+      code_challenge_method,
+    } = body;
 
     // Generate OAuth URL
     if (action === "get_auth_url") {
-      const authUrl = `https://auth.mercadolivre.com.br/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirect_uri)}&state=${state}`;
+      if (!redirect_uri || !state) {
+        return new Response(JSON.stringify({ error: "redirect_uri and state are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const authParams = new URLSearchParams({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri,
+        state,
+      });
+
+      if (code_challenge) {
+        authParams.set("code_challenge", code_challenge);
+        authParams.set("code_challenge_method", code_challenge_method || "S256");
+      }
+
+      const authUrl = `https://auth.mercadolivre.com.br/authorization?${authParams.toString()}`;
       return new Response(JSON.stringify({ url: authUrl }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -37,23 +66,39 @@ Deno.serve(async (req) => {
 
     // Exchange code for tokens
     if (action === "exchange_code") {
+      if (!code || !redirect_uri) {
+        return new Response(JSON.stringify({ error: "code and redirect_uri are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const tokenBody = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri,
+      });
+
+      if (code_verifier) {
+        tokenBody.set("code_verifier", code_verifier);
+      }
+
       const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          grant_type: "authorization_code",
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-          redirect_uri,
-        }),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: tokenBody.toString(),
       });
 
       if (!tokenRes.ok) {
         const errBody = await tokenRes.text();
         console.error("ML token exchange failed:", tokenRes.status, errBody);
         return new Response(JSON.stringify({ error: "Token exchange failed", details: errBody }), {
-          status: 400,
+          status: tokenRes.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -108,7 +153,13 @@ Deno.serve(async (req) => {
 
     // Refresh token
     if (action === "refresh_token") {
-      const { connection_id } = await req.json();
+      if (!connection_id) {
+        return new Response(JSON.stringify({ error: "connection_id is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const { data: conn } = await supabase
         .from("ml_connections")
         .select("*")
@@ -124,18 +175,22 @@ Deno.serve(async (req) => {
 
       const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
           grant_type: "refresh_token",
           client_id: clientId,
           client_secret: clientSecret,
           refresh_token: conn.refresh_token,
-        }),
+        }).toString(),
       });
 
       if (!tokenRes.ok) {
-        return new Response(JSON.stringify({ error: "Refresh failed" }), {
-          status: 400,
+        const errBody = await tokenRes.text();
+        return new Response(JSON.stringify({ error: "Refresh failed", details: errBody }), {
+          status: tokenRes.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

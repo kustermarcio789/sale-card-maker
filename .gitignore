@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.playwright-cli/
+supabase/functions/.env
+supabase/functions/.env.local
+supabase/.temp/

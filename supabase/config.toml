@@ -1,4 +1,4 @@
-project_id = "fcwsmxzwgqabzyxoavto"
+project_id = "gyaddryvtuzllcggorjc"
 
 [functions.ml-auth]
 verify_jwt = false
