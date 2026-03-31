@@ -3,6 +3,7 @@ import {
   createMLOAuthSession,
   resolveMLRedirectUri,
 } from "@/services/mlOAuth";
+import type { ProcessingResult } from "@/services/fileProcessor";
 
 export interface MLConnection {
   id: string;
@@ -26,6 +27,80 @@ export interface MLOrder {
   quantity: number;
   amount: number | null;
   order_status: string | null;
+}
+
+function padDatePart(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function formatSaleDate(dateString: string): { saleDate: string; saleTime: string } {
+  const parsedDate = new Date(dateString);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return { saleDate: "", saleTime: "" };
+  }
+
+  return {
+    saleDate: `${parsedDate.getFullYear()}-${padDatePart(parsedDate.getMonth() + 1)}-${padDatePart(parsedDate.getDate())}`,
+    saleTime: `${padDatePart(parsedDate.getHours())}:${padDatePart(parsedDate.getMinutes())}`,
+  };
+}
+
+export function mapMLOrderToProcessingResult(order: MLOrder): ProcessingResult {
+  const { saleDate, saleTime } = formatSaleDate(order.sale_date);
+  const sku = order.sku || "";
+
+  return {
+    sale: {
+      id: order.id,
+      saleNumber: order.sale_number || order.order_id,
+      saleDate,
+      saleTime,
+      customerName: order.buyer_name || "",
+      customerNickname: order.buyer_nickname || "",
+      productName: order.item_title || "",
+      sku,
+      quantity: order.quantity || 1,
+      amount: order.amount ?? undefined,
+      barcodeValue: sku,
+      qrcodeValue: sku,
+      productImageUrl: "",
+      productImageData: "",
+    },
+    rawText: JSON.stringify(
+      {
+        order_id: order.order_id,
+        status: order.order_status,
+        buyer_name: order.buyer_name,
+        buyer_nickname: order.buyer_nickname,
+        item_title: order.item_title,
+        sku: order.sku,
+        quantity: order.quantity,
+        amount: order.amount,
+        sale_date: order.sale_date,
+      },
+      null,
+      2
+    ),
+    confidence: {
+      saleNumber: order.sale_number ? "high" : "medium",
+      saleDate: saleDate ? "high" : "empty",
+      saleTime: saleTime ? "high" : "empty",
+      customerName: order.buyer_name ? "high" : "low",
+      customerNickname: order.buyer_nickname ? "high" : "low",
+      productName: order.item_title ? "high" : "empty",
+      sku: order.sku ? "high" : "low",
+      quantity: "high",
+      amount: order.amount != null ? "high" : "empty",
+      barcodeValue: sku ? "high" : "low",
+      qrcodeValue: sku ? "high" : "low",
+    },
+    method: "mercado-livre",
+  };
+}
+
+export function mapMLOrdersToProcessingResults(orders: MLOrder[]): ProcessingResult[] {
+  return orders.map(mapMLOrderToProcessingResult);
 }
 
 async function getFunctionsErrorMessage(

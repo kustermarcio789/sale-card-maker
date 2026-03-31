@@ -8,7 +8,7 @@ export interface ProcessingResult {
   sale: SaleData;
   rawText: string;
   confidence: Record<string, "high" | "medium" | "low" | "empty">;
-  method: "pdf-text" | "ocr";
+  method: "pdf-text" | "ocr" | "mercado-livre";
 }
 
 /**

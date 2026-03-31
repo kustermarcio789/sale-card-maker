@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useExtraction } from "@/contexts/ExtractionContext";
 import {
   getMLConnectionStatus,
   startMLOAuth,
   syncMLOrders,
   disconnectML,
   getMLOrders,
+  mapMLOrdersToProcessingResults,
   type MLConnection,
   type MLOrder,
 } from "@/services/mercadoLivreService";
@@ -22,6 +25,8 @@ import {
   AlertCircle,
   Calendar,
   Filter,
+  ArrowRight,
+  FileOutput,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -44,28 +49,30 @@ import {
 } from "@/components/ui/select";
 
 export default function MercadoLivrePage() {
+  const navigate = useNavigate();
+  const { setResults } = useExtraction();
   const [connection, setConnection] = useState<MLConnection | null>(null);
   const [orders, setOrders] = useState<MLOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
-  // Filters
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const conn = await getMLConnectionStatus();
-      setConnection(conn);
-      if (conn) {
-        const o = await getMLOrders();
-        setOrders(o);
+      const currentConnection = await getMLConnectionStatus();
+      setConnection(currentConnection);
+
+      if (currentConnection) {
+        const importedOrders = await getMLOrders();
+        setOrders(importedOrders);
       }
-    } catch (err) {
-      console.error("Failed to load ML data:", err);
+    } catch (error) {
+      console.error("Failed to load Mercado Livre data:", error);
     } finally {
       setLoading(false);
     }
@@ -80,28 +87,31 @@ export default function MercadoLivrePage() {
     try {
       const url = await startMLOAuth();
       window.location.href = url;
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao iniciar conexão");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao iniciar conexao");
       setConnecting(false);
     }
   };
 
   const handleSync = async () => {
     if (!connection) return;
+
     setSyncing(true);
     try {
       const result = await syncMLOrders(connection.id, {
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
-        status_filter: statusFilter || undefined,
+        status_filter: statusFilter === "all" ? undefined : statusFilter,
       });
+
       toast.success(`${result.synced} pedidos sincronizados de ${result.total_fetched} encontrados`);
-      const o = await getMLOrders();
-      setOrders(o);
-      const conn = await getMLConnectionStatus();
-      setConnection(conn);
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao sincronizar");
+
+      const importedOrders = await getMLOrders();
+      setOrders(importedOrders);
+      const currentConnection = await getMLConnectionStatus();
+      setConnection(currentConnection);
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao sincronizar");
     } finally {
       setSyncing(false);
     }
@@ -109,14 +119,26 @@ export default function MercadoLivrePage() {
 
   const handleDisconnect = async () => {
     if (!connection) return;
+
     try {
       await disconnectML(connection.id);
       setConnection(null);
       setOrders([]);
       toast.success("Conta desconectada");
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao desconectar");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao desconectar");
     }
+  };
+
+  const handleReviewOrders = (ordersToReview: MLOrder[]) => {
+    if (ordersToReview.length === 0) {
+      toast.info("Nenhum pedido importado para gerar etiqueta");
+      return;
+    }
+
+    setResults(mapMLOrdersToProcessingResults(ordersToReview));
+    toast.success(`${ordersToReview.length} pedido(s) enviados para conferencia`);
+    navigate("/review");
   };
 
   const statusColors: Record<string, string> = {
@@ -143,16 +165,15 @@ export default function MercadoLivrePage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Mercado Livre</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Conecte sua conta e importe vendas automaticamente
+            Conecte sua conta, sincronize os pedidos e envie as vendas para gerar etiquetas.
           </p>
         </div>
 
-        {/* Connection Card */}
         <div className="glass-card p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
               <Link2 className="w-4 h-4 text-muted-foreground" />
-              Conexão
+              Conexao
             </h2>
             {connection ? (
               <Badge variant="default" className="bg-success text-success-foreground">
@@ -168,14 +189,18 @@ export default function MercadoLivrePage() {
           </div>
 
           {connection ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground text-xs uppercase tracking-wider">Vendedor</p>
-                  <p className="font-medium text-foreground">{connection.seller_nickname || connection.seller_id}</p>
+                  <p className="font-medium text-foreground">
+                    {connection.seller_nickname || connection.seller_id}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs uppercase tracking-wider">Última Sincronização</p>
+                  <p className="text-muted-foreground text-xs uppercase tracking-wider">
+                    Ultima sincronizacao
+                  </p>
                   <p className="font-medium text-foreground">
                     {connection.last_sync_at
                       ? new Date(connection.last_sync_at).toLocaleString("pt-BR")
@@ -183,15 +208,26 @@ export default function MercadoLivrePage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs uppercase tracking-wider">Pedidos Importados</p>
+                  <p className="text-muted-foreground text-xs uppercase tracking-wider">
+                    Pedidos importados
+                  </p>
                   <p className="font-medium text-foreground">{orders.length}</p>
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button onClick={handleSync} disabled={syncing} size="sm">
                   <RefreshCw className={`w-4 h-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
                   {syncing ? "Sincronizando..." : "Sincronizar Agora"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={orders.length === 0}
+                  onClick={() => handleReviewOrders(orders)}
+                >
+                  <FileOutput className="w-4 h-4 mr-1" />
+                  Gerar Etiquetas ({orders.length})
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -204,7 +240,7 @@ export default function MercadoLivrePage() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Desconectar Mercado Livre?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Isso removerá a conexão e todos os pedidos importados. Essa ação não pode ser desfeita.
+                        Isso removera a conexao e todos os pedidos importados. Essa acao nao pode ser desfeita.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -219,7 +255,7 @@ export default function MercadoLivrePage() {
             <div className="text-center py-6 space-y-3">
               <ShoppingCart className="w-10 h-10 text-muted-foreground/30 mx-auto" />
               <p className="text-sm text-muted-foreground">
-                Conecte sua conta do Mercado Livre para importar vendas automaticamente
+                Conecte sua conta do Mercado Livre para importar vendas automaticamente.
               </p>
               <Button onClick={handleConnect} disabled={connecting}>
                 {connecting ? (
@@ -233,10 +269,8 @@ export default function MercadoLivrePage() {
           )}
         </div>
 
-        {/* Filters & Orders */}
         {connection && (
           <>
-            {/* Filters */}
             <div className="glass-card p-4">
               <div className="flex items-center gap-3 flex-wrap">
                 <Filter className="w-4 h-4 text-muted-foreground" />
@@ -245,17 +279,17 @@ export default function MercadoLivrePage() {
                   <Input
                     type="date"
                     value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
+                    onChange={(event) => setDateFrom(event.target.value)}
                     className="w-40 h-8 text-xs bg-secondary/50"
                     placeholder="De"
                   />
-                  <span className="text-muted-foreground text-xs">até</span>
+                  <span className="text-muted-foreground text-xs">ate</span>
                   <Input
                     type="date"
                     value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
+                    onChange={(event) => setDateTo(event.target.value)}
                     className="w-40 h-8 text-xs bg-secondary/50"
-                    placeholder="Até"
+                    placeholder="Ate"
                   />
                 </div>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -278,12 +312,20 @@ export default function MercadoLivrePage() {
               </div>
             </div>
 
-            {/* Orders List */}
             <div className="glass-card p-5">
-              <h2 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4 text-muted-foreground" />
-                Pedidos Importados ({orders.length})
-              </h2>
+              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4 text-muted-foreground" />
+                  Pedidos Importados ({orders.length})
+                </h2>
+
+                {orders.length > 0 && (
+                  <Button size="sm" onClick={() => handleReviewOrders(orders)}>
+                    <FileOutput className="w-4 h-4 mr-2" />
+                    Revisar e Exportar Todas
+                  </Button>
+                )}
+              </div>
 
               {orders.length === 0 ? (
                 <div className="text-center py-8">
@@ -297,28 +339,37 @@ export default function MercadoLivrePage() {
                   {orders.map((order) => (
                     <div
                       key={order.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
+                      className="flex items-center justify-between gap-4 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium text-foreground">#{order.sale_number}</p>
                           <Badge
-                            variant={(statusColors[order.order_status || ""] as any) || "outline"}
+                            variant={(statusColors[order.order_status || ""] as "default" | "secondary" | "destructive" | "outline") || "outline"}
                             className="text-[10px]"
                           >
-                            {order.order_status || "—"}
+                            {order.order_status || "-"}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {order.item_title || "Sem título"}
+                          {order.item_title || "Sem titulo"}
                         </p>
-                        <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
-                          <span>{order.buyer_name || order.buyer_nickname || "—"}</span>
+                        <div className="flex gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                          <span>{order.buyer_name || order.buyer_nickname || "-"}</span>
                           <span>{new Date(order.sale_date).toLocaleDateString("pt-BR")}</span>
                           {order.sku && <span className="font-mono">{order.sku}</span>}
                           <span>Qtd: {order.quantity}</span>
                         </div>
                       </div>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleReviewOrders([order])}
+                      >
+                        Gerar Etiqueta
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
                     </div>
                   ))}
                 </div>
