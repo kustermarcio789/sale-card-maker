@@ -5,6 +5,45 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function getItemImageUrl(
+  accessToken: string,
+  itemId: string | null | undefined,
+  cache: Map<string, string | null>
+) {
+  if (!itemId) return null;
+  if (cache.has(itemId)) return cache.get(itemId) ?? null;
+
+  try {
+    const itemRes = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!itemRes.ok) {
+      cache.set(itemId, null);
+      return null;
+    }
+
+    const itemData = await itemRes.json();
+    const pictures = Array.isArray(itemData.pictures) ? itemData.pictures : [];
+    const firstPicture =
+      pictures.find((picture: { secure_url?: string; url?: string }) => picture.secure_url || picture.url) ??
+      null;
+
+    const imageUrl =
+      firstPicture?.secure_url ||
+      firstPicture?.url ||
+      itemData.secure_thumbnail ||
+      itemData.thumbnail ||
+      null;
+
+    cache.set(itemId, imageUrl);
+    return imageUrl;
+  } catch {
+    cache.set(itemId, null);
+    return null;
+  }
+}
+
 async function ensureValidToken(supabase: any, connection: any, clientId: string, clientSecret: string) {
   const expiresAt = new Date(connection.token_expires_at);
   if (expiresAt > new Date(Date.now() + 60000)) {
@@ -98,12 +137,15 @@ Deno.serve(async (req) => {
 
     const ordersData = await ordersRes.json();
     const orders = ordersData.results || [];
+    const itemImageCache = new Map<string, string | null>();
 
     // Map and upsert orders
     let synced = 0;
     for (const order of orders) {
       const item = order.order_items?.[0];
       if (!item) continue;
+      const itemId = item.item?.id || null;
+      const productImageUrl = await getItemImageUrl(accessToken, itemId, itemImageCache);
 
       const orderRecord = {
         connection_id: conn.id,
@@ -115,7 +157,8 @@ Deno.serve(async (req) => {
           : null,
         buyer_nickname: order.buyer?.nickname || null,
         item_title: item.item?.title || null,
-        item_id: item.item?.id || null,
+        item_id: itemId,
+        product_image_url: productImageUrl,
         sku: item.item?.seller_sku || null,
         quantity: item.quantity || 1,
         amount: item.unit_price ? item.unit_price * (item.quantity || 1) : null,

@@ -1,5 +1,4 @@
 import { SaleData } from "@/types/sales";
-import { Package, User, Hash, Calendar, ShoppingCart } from "lucide-react";
 
 interface SaleCardPreviewProps {
   sale: SaleData;
@@ -9,72 +8,81 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
   const productImageSrc = sale.productImageData || sale.productImageUrl;
 
   return (
-    <div className="glass-card p-0 overflow-hidden animate-fade-in">
-      <div className="flex flex-col sm:flex-row">
-        {/* Product image */}
-        <div className="sm:w-36 h-36 bg-secondary flex items-center justify-center p-4 flex-shrink-0">
-          <div className="w-24 h-24 rounded-xl overflow-hidden border-2 border-border shadow-sm bg-card">
-            {productImageSrc ? (
+    <div className="glass-card p-4 animate-fade-in">
+      <div className="rounded-2xl border border-border/70 bg-card shadow-sm overflow-hidden">
+        <div className="flex flex-col md:flex-row">
+          <div className="md:w-44 border-b md:border-b-0 md:border-r border-border/70 bg-secondary/40 flex items-center justify-center p-5">
+            <div className="w-32 h-32 rounded-full border-4 border-white shadow-md overflow-hidden bg-background">
               <img
-                src={productImageSrc}
-                alt={sale.productName}
+                src={productImageSrc || "/placeholder.svg"}
+                alt={sale.productName || "Produto"}
                 className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = "/placeholder.svg";
+                onError={(event) => {
+                  (event.target as HTMLImageElement).src = "/placeholder.svg";
                 }}
               />
-            ) : (
-              <img
-                src="/placeholder.svg"
-                alt="Sem imagem disponível"
-                className="w-full h-full object-cover"
-              />
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Center info */}
-        <div className="flex-1 p-4 space-y-2 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold bg-primary/10 text-primary px-2 py-0.5 rounded">
-              {sale.sku}
-            </span>
-            <span className="text-xs text-muted-foreground">Qtd: {sale.quantity}</span>
-          </div>
-          <p className="text-sm font-semibold text-foreground truncate">{sale.productName}</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <Hash className="w-3 h-3" />
-              <span className="truncate">{sale.saleNumber}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Calendar className="w-3 h-3" />
-              <span>{sale.saleDate} {sale.saleTime}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <User className="w-3 h-3" />
-              <span className="truncate">{sale.customerName}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <ShoppingCart className="w-3 h-3" />
-              <span>{sale.customerNickname}</span>
-            </div>
-          </div>
-        </div>
+          <div className="flex-1 p-5 flex flex-col justify-between gap-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-sm font-bold bg-primary/10 text-primary px-3 py-1 rounded-full">
+                  SKU: {sale.sku || "-"}
+                </span>
+                <span className="text-sm text-muted-foreground">{sale.quantity} unidade(s)</span>
+              </div>
 
-        {/* Right codes */}
-        <div className="sm:w-32 p-4 flex flex-row sm:flex-col items-center justify-center gap-3 border-t sm:border-t-0 sm:border-l border-border bg-secondary/50">
-          <div className="text-center">
-            <div className="w-20 h-10 bg-foreground/5 rounded border border-border flex items-center justify-center">
-              <span className="text-[8px] font-mono text-muted-foreground">BARCODE</span>
+              <div>
+                <p className="text-lg font-bold text-foreground leading-tight">
+                  {sale.productName || "Produto sem nome"}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xl font-semibold text-foreground">#{sale.saleNumber || "-"}</p>
+                <p className="text-sm text-muted-foreground">
+                  {sale.saleDate || "-"} {sale.saleTime || ""}
+                </p>
+              </div>
             </div>
-            <p className="text-[8px] text-muted-foreground mt-1 font-mono">{sale.sku || "—"}</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Cliente</p>
+                <p className="text-xl font-bold text-foreground truncate">
+                  {sale.customerName || "-"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Nickname</p>
+                <p className="text-xl font-bold text-foreground truncate">
+                  {sale.customerNickname || "-"}
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="w-14 h-14 bg-foreground/5 rounded border border-border flex items-center justify-center">
-              <span className="text-[8px] font-mono text-muted-foreground">QR</span>
+
+          <div className="md:w-40 border-t md:border-t-0 md:border-l border-border/70 bg-secondary/30 p-4 flex md:flex-col items-center justify-center gap-4">
+            <div className="text-center">
+              <div className="w-24 h-12 bg-white rounded-md border border-border flex items-center justify-center shadow-sm">
+                <span className="text-[9px] font-mono tracking-[0.25em] text-muted-foreground">
+                  BARCODE
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                {sale.barcodeValue || "-"}
+              </p>
             </div>
-            <p className="text-[8px] text-muted-foreground mt-1 font-mono">{sale.sku || "—"}</p>
+
+            <div className="text-center">
+              <div className="w-20 h-20 bg-white rounded-md border border-border flex items-center justify-center shadow-sm">
+                <span className="text-[10px] font-mono text-muted-foreground">QR</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                {sale.qrcodeValue || "-"}
+              </p>
+            </div>
           </div>
         </div>
       </div>

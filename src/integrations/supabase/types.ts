@@ -62,6 +62,7 @@ export type Database = {
           item_title: string | null
           order_id: string
           order_status: string | null
+          product_image_url: string | null
           quantity: number
           raw_data: Json | null
           sale_date: string
@@ -80,6 +81,7 @@ export type Database = {
           item_title?: string | null
           order_id: string
           order_status?: string | null
+          product_image_url?: string | null
           quantity?: number
           raw_data?: Json | null
           sale_date: string
@@ -98,6 +100,7 @@ export type Database = {
           item_title?: string | null
           order_id?: string
           order_status?: string | null
+          product_image_url?: string | null
           quantity?: number
           raw_data?: Json | null
           sale_date?: string

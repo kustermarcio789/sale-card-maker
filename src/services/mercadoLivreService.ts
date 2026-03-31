@@ -23,6 +23,7 @@ export interface MLOrder {
   buyer_nickname: string | null;
   item_title: string | null;
   item_id: string | null;
+  product_image_url: string | null;
   sku: string | null;
   quantity: number;
   amount: number | null;
@@ -64,7 +65,7 @@ export function mapMLOrderToProcessingResult(order: MLOrder): ProcessingResult {
       amount: order.amount ?? undefined,
       barcodeValue: sku,
       qrcodeValue: sku,
-      productImageUrl: "",
+      productImageUrl: order.product_image_url || "",
       productImageData: "",
     },
     rawText: JSON.stringify(
@@ -75,6 +76,7 @@ export function mapMLOrderToProcessingResult(order: MLOrder): ProcessingResult {
         buyer_nickname: order.buyer_nickname,
         item_title: order.item_title,
         sku: order.sku,
+        product_image_url: order.product_image_url,
         quantity: order.quantity,
         amount: order.amount,
         sale_date: order.sale_date,
@@ -217,7 +219,7 @@ export async function disconnectML(connectionId: string): Promise<void> {
 export async function getMLOrders(): Promise<MLOrder[]> {
   const { data, error } = await supabase
     .from("ml_orders")
-    .select("id, order_id, sale_number, sale_date, buyer_name, buyer_nickname, item_title, item_id, sku, quantity, amount, order_status")
+    .select("id, order_id, sale_number, sale_date, buyer_name, buyer_nickname, item_title, item_id, product_image_url, sku, quantity, amount, order_status")
     .order("sale_date", { ascending: false })
     .limit(100);
 
