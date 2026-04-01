@@ -105,12 +105,7 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
 
           <div className="flex-1 space-y-4 p-5">
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-4">
-                <p className="text-base font-bold text-foreground">SKU: {sale.sku || "-"}</p>
-                <span className="text-sm text-muted-foreground">
-                  {sale.quantity} unidade{sale.quantity !== 1 ? "s" : ""}
-                </span>
-              </div>
+              <p className="text-base font-bold text-foreground">SKU: {sale.sku || "-"}</p>
 
               <div>
                 <p className="text-2xl font-bold leading-tight text-foreground">
@@ -118,40 +113,34 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <QRCodePreview
-                  value={sale.saleQrcodeValue}
-                  label="QR VENDA"
-                  compact
-                />
-
-                <div className="space-y-1 sm:text-right">
-                  <p className="text-2xl font-semibold leading-none text-slate-600">
-                    #{sale.saleNumber || "-"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {sale.saleDate || "-"} {sale.saleTime || ""}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.3fr_1fr]">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                  Cliente
-                </p>
                 <p className="truncate text-3xl font-bold leading-none text-foreground">
                   {sale.customerName || "-"}
                 </p>
               </div>
+
               <div>
-                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                  Nickname
-                </p>
                 <p className="truncate text-2xl font-bold leading-none text-slate-500">
                   {sale.customerNickname || "-"}
                 </p>
+              </div>
+
+              <div>
+                <p className="text-2xl font-semibold leading-none text-slate-600">
+                  #{sale.saleNumber || "-"}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  {sale.saleDate || "-"} {sale.saleTime || ""}
+                </p>
+              </div>
+
+              <div>
+                <div className="w-fit">
+                  <QRCodePreview value={sale.saleQrcodeValue} label="QR VENDA" compact />
+                </div>
               </div>
             </div>
           </div>
