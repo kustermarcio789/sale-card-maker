@@ -1,4 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+const SUPABASE_URL = "https://gyaddryvtuzllcggorjc.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_USdCDZTlvuXFTOBlAvYSpQ_ne5ka8Ee";
+
+type ConnectionRow = {
+  seller_id: string;
+  access_token: string;
+};
 
 type StoreRecord = {
   id: string | number;
@@ -13,26 +19,28 @@ type StoreRecord = {
 };
 
 export default async function handler(_request: any, response: any) {
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return response.status(500).json({ error: "Supabase env vars are missing" });
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey);
-  const { data: connection, error: connectionError } = await supabase
-    .from("ml_connections")
-    .select("seller_id, access_token, created_at")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (connectionError || !connection?.seller_id || !connection?.access_token) {
-    return response.status(200).json({ stores: [] });
-  }
-
   try {
+    const connectionResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/ml_connections?select=seller_id,access_token&order=created_at.desc&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        },
+      }
+    );
+
+    if (!connectionResponse.ok) {
+      return response.status(200).json({ stores: [] });
+    }
+
+    const connections = (await connectionResponse.json()) as ConnectionRow[];
+    const connection = connections[0];
+
+    if (!connection?.seller_id || !connection?.access_token) {
+      return response.status(200).json({ stores: [] });
+    }
+
     const storesResponse = await fetch(
       `https://api.mercadolibre.com/users/${connection.seller_id}/stores/search?tags=stock_location`,
       {
@@ -58,7 +66,10 @@ export default async function handler(_request: any, response: any) {
       : [];
 
     return response.status(200).json({ stores });
-  } catch {
-    return response.status(200).json({ stores: [] });
+  } catch (error) {
+    return response.status(200).json({
+      stores: [],
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }
