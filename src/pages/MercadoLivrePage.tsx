@@ -412,9 +412,12 @@ export default function MercadoLivrePage() {
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Mercado Livre</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold text-foreground">EcoFerro</h1>
+            <Badge variant="outline">Canal Mercado Livre</Badge>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Conecte sua conta, sincronize os pedidos e envie as vendas para gerar etiquetas.
+            Conecte a conta EcoFerro, sincronize os pedidos e envie as vendas para gerar etiquetas.
           </p>
         </div>
 

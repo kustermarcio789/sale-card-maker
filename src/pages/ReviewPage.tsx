@@ -43,6 +43,7 @@ export default function ReviewPage() {
       ...updated,
       barcodeValue: updated.sku,
       qrcodeValue: updated.sku,
+      saleQrcodeValue: updated.saleNumber,
     };
 
     setSales((previous) =>

@@ -9,6 +9,7 @@ import UploadPage from "./pages/UploadPage";
 import ReviewPage from "./pages/ReviewPage";
 import HistoryPage from "./pages/HistoryPage";
 import MercadoLivrePage from "./pages/MercadoLivrePage";
+import MercadoLivreFantomPage from "./pages/MercadoLivreFantomPage";
 import MLCallbackPage from "./pages/MLCallbackPage";
 import NotFound from "./pages/NotFound";
 
@@ -27,6 +28,7 @@ const App = () => (
             <Route path="/review" element={<ReviewPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/mercado-livre" element={<MercadoLivrePage />} />
+            <Route path="/mercado-livre-fantom" element={<MercadoLivreFantomPage />} />
             <Route path="/ml-callback" element={<MLCallbackPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

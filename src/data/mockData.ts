@@ -13,7 +13,8 @@ export const mockSales: SaleData[] = [
     quantity: 2,
     amount: 49.9,
     barcodeValue: "7891234567890",
-    qrcodeValue: "https://mercadolivre.com.br/venda/2000004875631248",
+    qrcodeValue: "PEL-S24U-3PK",
+    saleQrcodeValue: "2000004875631248",
     productImageUrl: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=200&h=200&fit=crop",
   },
   {
@@ -28,7 +29,8 @@ export const mockSales: SaleData[] = [
     quantity: 1,
     amount: 34.5,
     barcodeValue: "7891234567891",
-    qrcodeValue: "https://mercadolivre.com.br/venda/2000004875631399",
+    qrcodeValue: "CAP-IP15PM-TR",
+    saleQrcodeValue: "2000004875631399",
     productImageUrl: "https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?w=200&h=200&fit=crop",
   },
   {
@@ -43,7 +45,8 @@ export const mockSales: SaleData[] = [
     quantity: 3,
     amount: 79.9,
     barcodeValue: "7891234567892",
-    qrcodeValue: "https://mercadolivre.com.br/venda/2000004875631500",
+    qrcodeValue: "CHRG-USB-25W",
+    saleQrcodeValue: "2000004875631500",
     productImageUrl: "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=200&h=200&fit=crop",
   },
 ];

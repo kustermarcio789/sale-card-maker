@@ -6,15 +6,27 @@ interface SaleCardPreviewProps {
   sale: SaleData;
 }
 
-function CodePlaceholder({ label }: { label: string }) {
+function CodePlaceholder({ label, compact = false }: { label: string; compact?: boolean }) {
   return (
-    <div className="flex h-full min-h-20 items-center justify-center rounded-md border border-dashed border-border bg-white text-[10px] text-muted-foreground">
+    <div
+      className={`flex items-center justify-center rounded-md border border-dashed border-border bg-white text-[10px] text-muted-foreground ${
+        compact ? "h-20 w-20" : "min-h-20"
+      }`}
+    >
       {label}
     </div>
   );
 }
 
-function QRCodePreview({ value }: { value: string }) {
+function QRCodePreview({
+  value,
+  label,
+  compact = false,
+}: {
+  value: string;
+  label: string;
+  compact?: boolean;
+}) {
   const [src, setSrc] = useState("");
 
   useEffect(() => {
@@ -28,7 +40,7 @@ function QRCodePreview({ value }: { value: string }) {
     }
 
     QRCode.toDataURL(value, {
-      width: 220,
+      width: compact ? 120 : 220,
       margin: 1,
       color: { dark: "#111827", light: "#FFFFFF" },
     })
@@ -42,15 +54,22 @@ function QRCodePreview({ value }: { value: string }) {
     return () => {
       active = false;
     };
-  }, [value]);
+  }, [compact, value]);
 
   if (!src) {
-    return <CodePlaceholder label={value ? "Gerando QR..." : "Sem QR"} />;
+    return <CodePlaceholder label={value ? "Gerando QR..." : "Sem QR"} compact={compact} />;
   }
 
   return (
     <div className="rounded-md border border-border bg-white p-2 shadow-sm">
-      <img src={src} alt={`QR code ${value}`} className="mx-auto h-28 w-28 object-contain" />
+      <img
+        src={src}
+        alt={`${label} ${value}`}
+        className={`mx-auto object-contain ${compact ? "h-16 w-16" : "h-28 w-28"}`}
+      />
+      <p className="mt-1 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </p>
       <p className="mt-1 text-center font-mono text-[10px] text-muted-foreground">
         {value}
       </p>
@@ -86,10 +105,8 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
 
           <div className="flex-1 space-y-4 p-5">
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">
-                  SKU: {sale.sku || "-"}
-                </span>
+              <div className="flex flex-wrap items-center gap-4">
+                <p className="text-base font-bold text-foreground">SKU: {sale.sku || "-"}</p>
                 <span className="text-sm text-muted-foreground">
                   {sale.quantity} unidade{sale.quantity !== 1 ? "s" : ""}
                 </span>
@@ -101,13 +118,21 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
                 </p>
               </div>
 
-              <div className="space-y-1">
-                <p className="text-2xl font-semibold leading-none text-slate-600">
-                  #{sale.saleNumber || "-"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {sale.saleDate || "-"} {sale.saleTime || ""}
-                </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <QRCodePreview
+                  value={sale.saleQrcodeValue}
+                  label="QR VENDA"
+                  compact
+                />
+
+                <div className="space-y-1 sm:text-right">
+                  <p className="text-2xl font-semibold leading-none text-slate-600">
+                    #{sale.saleNumber || "-"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {sale.saleDate || "-"} {sale.saleTime || ""}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -131,13 +156,8 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
             </div>
           </div>
 
-          <div className="border-t border-slate-200 bg-slate-50 p-4 md:w-40 md:border-l md:border-t-0">
-            <div>
-              <p className="mb-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                QR code
-              </p>
-              <QRCodePreview value={sale.qrcodeValue} />
-            </div>
+          <div className="border-t border-slate-200 bg-slate-50 p-4 md:w-44 md:border-l md:border-t-0">
+            <QRCodePreview value={sale.qrcodeValue} label="QR PEÇA" />
           </div>
         </div>
       </div>

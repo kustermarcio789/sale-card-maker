@@ -11,6 +11,7 @@ export interface SaleData {
   amount?: number;
   barcodeValue: string;
   qrcodeValue: string;
+  saleQrcodeValue: string;
   productImageUrl: string;
   productImageData?: string;
 }

@@ -118,47 +118,78 @@ async function drawSaleCard(doc: jsPDF, sale: SaleData, x0: number, y0: number) 
   }
 
   const cx = x0 + LEFT_W + 2.5;
-  let cy = y0 + pad + 0.5;
-  const maxTextW = CENTER_W - 5;
+  let cy = y0 + pad + 0.8;
+  const maxTextW = CENTER_W - 4.5;
 
-  doc.setFillColor(232, 237, 250);
-  doc.roundedRect(cx, cy, 30, 5.5, 1.2, 1.2, "F");
-  doc.setFontSize(6.5);
+  doc.setFontSize(7);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(60, 80, 180);
-  doc.text(`SKU: ${sale.sku || "-"}`, cx + 15, cy + 3.7, { align: "center" });
+  doc.setTextColor(45, 45, 55);
+  doc.text(`SKU: ${sale.sku || "-"}`, cx, cy + 1.5);
 
   doc.setFontSize(6);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(120, 120, 130);
-  doc.text(`${sale.quantity} unidade${sale.quantity !== 1 ? "s" : ""}`, cx + 33, cy + 3.7);
-  cy += 8.5;
+  doc.text(`${sale.quantity} unidade${sale.quantity !== 1 ? "s" : ""}`, cx + 28, cy + 1.5);
+  cy += 6;
 
   doc.setFontSize(8.5);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 30, 40);
   const productLines = doc.splitTextToSize(sale.productName || "-", maxTextW);
   doc.text(productLines.slice(0, 2), cx, cy);
-  cy += Math.min(productLines.length, 2) * 3.9 + 1.5;
+  cy += Math.min(productLines.length, 2) * 3.9 + 1;
 
-  doc.setFontSize(6.2);
+  const saleQrData = await generateQRCodeDataUrl(sale.saleQrcodeValue);
+  const saleQrSize = 13.5;
+  const saleQrX = cx;
+  const saleQrY = cy;
+
+  doc.setFontSize(5.1);
+  doc.setTextColor(120, 120, 130);
+  doc.text("QR VENDA", saleQrX + saleQrSize / 2, saleQrY - 0.8, { align: "center" });
+
+  if (saleQrData) {
+    try {
+      doc.addImage(saleQrData, "PNG", saleQrX, saleQrY, saleQrSize, saleQrSize);
+    } catch {
+      doc.setFontSize(5);
+      doc.setTextColor(170, 170, 180);
+      doc.text("Sem QR", saleQrX + saleQrSize / 2, saleQrY + saleQrSize / 2, { align: "center" });
+    }
+  } else {
+    doc.setFontSize(5);
+    doc.setTextColor(170, 170, 180);
+    doc.text("Sem QR", saleQrX + saleQrSize / 2, saleQrY + saleQrSize / 2, { align: "center" });
+  }
+
+  const infoX = saleQrX + saleQrSize + 4;
+  let infoY = saleQrY + 1.5;
+  const infoW = maxTextW - saleQrSize - 4;
+
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(95, 95, 105);
+  doc.text(`#${sale.saleNumber || "-"}`, infoX, infoY, { maxWidth: infoW });
+  infoY += 4.2;
+
+  doc.setFontSize(5.8);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(110, 110, 120);
-  doc.text(`#${sale.saleNumber || "-"}`, cx, cy, { maxWidth: maxTextW });
-  cy += 3.6;
-  doc.text(`${sale.saleDate || "-"} ${sale.saleTime || ""}`.trim(), cx, cy, {
-    maxWidth: maxTextW,
+  doc.setTextColor(120, 120, 130);
+  doc.text(`${sale.saleDate || "-"} ${sale.saleTime || ""}`.trim(), infoX, infoY, {
+    maxWidth: infoW,
   });
-  cy += 5;
+  infoY += 6;
 
-  doc.setFontSize(9.5);
+  doc.setFontSize(9.2);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(45, 45, 55);
-  doc.text(sale.customerName || "-", cx, cy, { maxWidth: maxTextW * 0.62 });
+  doc.text(sale.customerName || "-", cx, saleQrY + saleQrSize + 3.5, {
+    maxWidth: maxTextW * 0.62,
+  });
 
-  doc.setFontSize(8.7);
+  doc.setFontSize(8.2);
   doc.setTextColor(120, 120, 130);
-  doc.text(sale.customerNickname || "-", cx + maxTextW * 0.64, cy, {
+  doc.text(sale.customerNickname || "-", cx + maxTextW * 0.64, saleQrY + saleQrSize + 3.5, {
     maxWidth: maxTextW * 0.36,
   });
 
@@ -167,17 +198,17 @@ async function drawSaleCard(doc: jsPDF, sale: SaleData, x0: number, y0: number) 
   doc.setLineWidth(0.15);
   doc.line(rx - 2, y0 + pad, rx - 2, y0 + CARD_H - pad);
 
-  let ry = y0 + pad + 1.5;
+  let ry = y0 + pad + 2;
   const codeW = RIGHT_W - 6;
-
   const qrData = await generateQRCodeDataUrl(sale.qrcodeValue);
+
   doc.setFontSize(5.4);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(120, 120, 130);
-  doc.text("QR code", rx + codeW / 2, ry + 1, { align: "center" });
-  ry += 4;
+  doc.text("QR PEÇA", rx + codeW / 2, ry + 1, { align: "center" });
+  ry += 4.2;
 
-  const qrSize = Math.min(innerH - 12, 22);
+  const qrSize = Math.min(innerH - 10, 20);
   if (qrData) {
     const qrX = rx + (codeW - qrSize) / 2;
     try {

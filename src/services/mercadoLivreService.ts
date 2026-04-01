@@ -66,6 +66,7 @@ export function mapMLOrderToProcessingResult(order: MLOrder): ProcessingResult {
       amount: order.amount ?? undefined,
       barcodeValue: sku,
       qrcodeValue: sku,
+      saleQrcodeValue: order.sale_number || order.order_id,
       productImageUrl: order.product_image_url || "",
       productImageData: "",
     },

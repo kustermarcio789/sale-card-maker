@@ -285,6 +285,7 @@ export function extractSaleFields(rawText: string): ExtractionResult {
   // Barcode and QR code derived from SKU (optional — never critical error)
   const barcodeValue = sku;
   const qrcodeValue = sku;
+  const saleQrcodeValue = saleNumber;
   confidence["barcodeValue"] = sku ? "high" : "low";
   confidence["qrcodeValue"] = sku ? "high" : "low";
 
@@ -301,6 +302,7 @@ export function extractSaleFields(rawText: string): ExtractionResult {
     amount,
     barcodeValue,
     qrcodeValue,
+    saleQrcodeValue,
     productImageUrl: "",
     productImageData: "",
   };
