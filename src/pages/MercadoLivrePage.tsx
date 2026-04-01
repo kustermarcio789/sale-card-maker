@@ -119,6 +119,7 @@ function isSameCalendarDay(left: Date, right: Date): boolean {
 function getShipmentBucket(order: MLOrder): ShipmentBucket {
   const snapshot = getShipmentSnapshot(order);
   const status = String(snapshot?.status || order.order_status || "").toLowerCase();
+  const substatus = String(snapshot?.substatus || "").toLowerCase();
   const today = new Date();
 
   if (["delivered", "cancelled", "returned", "not_delivered"].includes(status)) {
@@ -127,6 +128,12 @@ function getShipmentBucket(order: MLOrder): ShipmentBucket {
 
   if (["shipped", "in_transit"].includes(status)) {
     return "in_transit";
+  }
+
+  // Mercado Livre commonly exposes "Prontas para enviar" as ready_for_pickup.
+  // We surface those entries inside "Envios de hoje" so the operator sees the same set more closely.
+  if (status === "ready_to_ship" && substatus === "ready_for_pickup") {
+    return "today";
   }
 
   const referenceDate = getReferenceShipmentDate(order);
