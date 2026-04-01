@@ -5,6 +5,26 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+async function getSellerStores(accessToken: string, sellerId: string) {
+  try {
+    const storesRes = await fetch(
+      `https://api.mercadolibre.com/users/${sellerId}/stores/search?tags=stock_location`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    if (!storesRes.ok) {
+      return [];
+    }
+
+    const storesData = await storesRes.json();
+    return Array.isArray(storesData.results) ? storesData.results : [];
+  } catch {
+    return [];
+  }
+}
+
 async function getItemImageUrl(
   accessToken: string,
   itemId: string | null | undefined,
@@ -97,6 +117,82 @@ async function getShipmentSnapshot(
     cache.set(shippingId, null);
     return null;
   }
+}
+
+function buildDepositSnapshot(
+  order: any,
+  shipmentSnapshot: Record<string, unknown> | null,
+  storesById: Map<string, any>,
+  storesByNodeId: Map<string, any>
+) {
+  const stock = order?.order_items?.[0]?.stock;
+  const storeId = stock?.store_id ? String(stock.store_id) : null;
+  const nodeId = stock?.node_id ? String(stock.node_id) : null;
+  const logisticType =
+    typeof shipmentSnapshot?.logistic_type === "string"
+      ? shipmentSnapshot.logistic_type
+      : null;
+
+  const matchedStore =
+    (storeId && storesById.get(storeId)) ||
+    (nodeId && storesByNodeId.get(nodeId)) ||
+    null;
+
+  if (matchedStore) {
+    return {
+      key: `store:${matchedStore.id}`,
+      label:
+        matchedStore.description ||
+        matchedStore.location?.address_line ||
+        matchedStore.location?.street_name ||
+        `Deposito ${matchedStore.id}`,
+      source: "store_search",
+      store_id: String(matchedStore.id),
+      node_id: matchedStore.network_node_id || nodeId || null,
+      logistic_type: logisticType,
+      store: {
+        id: matchedStore.id,
+        description: matchedStore.description || null,
+        network_node_id: matchedStore.network_node_id || null,
+        services: matchedStore.services || null,
+        location: matchedStore.location || null,
+      },
+    };
+  }
+
+  if (logisticType === "fulfillment") {
+    return {
+      key: "logistic:fulfillment",
+      label: "Full",
+      source: "logistic_type",
+      store_id: null,
+      node_id: nodeId,
+      logistic_type: logisticType,
+      store: null,
+    };
+  }
+
+  if (nodeId) {
+    return {
+      key: `node:${nodeId}`,
+      label: nodeId,
+      source: "node_id",
+      store_id: storeId,
+      node_id: nodeId,
+      logistic_type: logisticType,
+      store: null,
+    };
+  }
+
+  return {
+    key: "without-deposit",
+    label: "Vendas sem deposito",
+    source: "none",
+    store_id: storeId,
+    node_id: nodeId,
+    logistic_type: logisticType,
+    store: null,
+  };
 }
 
 async function ensureValidToken(supabase: any, connection: any, clientId: string, clientSecret: string) {
@@ -192,6 +288,19 @@ Deno.serve(async (req) => {
 
     const ordersData = await ordersRes.json();
     const orders = ordersData.results || [];
+    const sellerStores = await getSellerStores(accessToken, String(conn.seller_id));
+    const storesById = new Map<string, any>();
+    const storesByNodeId = new Map<string, any>();
+
+    for (const store of sellerStores) {
+      if (store?.id) {
+        storesById.set(String(store.id), store);
+      }
+      if (store?.network_node_id) {
+        storesByNodeId.set(String(store.network_node_id), store);
+      }
+    }
+
     const itemImageCache = new Map<string, string | null>();
     const shipmentSnapshotCache = new Map<string, Record<string, unknown> | null>();
 
@@ -216,6 +325,12 @@ Deno.serve(async (req) => {
         ? `${order.buyer.first_name} ${order.buyer.last_name || ""}`.trim()
         : null;
       const buyerName = shipmentReceiverName || buyerNameFromOrder || order.buyer?.nickname || null;
+      const depositSnapshot = buildDepositSnapshot(
+        order,
+        shipmentSnapshot,
+        storesById,
+        storesByNodeId
+      );
 
       const orderRecord = {
         connection_id: conn.id,
@@ -235,6 +350,7 @@ Deno.serve(async (req) => {
         raw_data: {
           ...order,
           shipment_snapshot: shipmentSnapshot,
+          deposit_snapshot: depositSnapshot,
         },
       };
 

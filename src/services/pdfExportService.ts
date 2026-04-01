@@ -1,5 +1,4 @@
 import jsPDF from "jspdf";
-import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
 import { SaleData } from "@/types/sales";
 
@@ -16,7 +15,7 @@ const CARD_H = Math.floor((USABLE_H - GAP * (CARDS_PER_PAGE - 1)) / CARDS_PER_PA
 const CARD_W = USABLE_W;
 
 const LEFT_W = 40;
-const RIGHT_W = 40;
+const RIGHT_W = 34;
 const CENTER_W = CARD_W - LEFT_W - RIGHT_W;
 
 async function loadImageAsDataUrl(url: string): Promise<string | null> {
@@ -44,32 +43,12 @@ function getImageFormat(dataUrl: string): "PNG" | "JPEG" | "WEBP" {
   return "JPEG";
 }
 
-function generateBarcodeDataUrl(value: string): string | null {
-  if (!value) return null;
-
-  try {
-    const canvas = document.createElement("canvas");
-    JsBarcode(canvas, value, {
-      format: "CODE128",
-      width: 1.2,
-      height: 28,
-      displayValue: false,
-      margin: 1,
-      background: "#ffffff",
-      lineColor: "#111827",
-    });
-    return canvas.toDataURL("image/png");
-  } catch {
-    return null;
-  }
-}
-
 async function generateQRCodeDataUrl(value: string): Promise<string | null> {
   if (!value) return null;
 
   try {
     return await QRCode.toDataURL(value, {
-      width: 120,
+      width: 180,
       margin: 1,
       color: { dark: "#111827", light: "#FFFFFF" },
     });
@@ -140,7 +119,7 @@ async function drawSaleCard(doc: jsPDF, sale: SaleData, x0: number, y0: number) 
 
   const cx = x0 + LEFT_W + 2.5;
   let cy = y0 + pad + 0.5;
-  const maxTextW = CENTER_W - 6.5;
+  const maxTextW = CENTER_W - 5;
 
   doc.setFillColor(232, 237, 250);
   doc.roundedRect(cx, cy, 30, 5.5, 1.2, 1.2, "F");
@@ -175,12 +154,12 @@ async function drawSaleCard(doc: jsPDF, sale: SaleData, x0: number, y0: number) 
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(45, 45, 55);
-  doc.text(sale.customerName || "-", cx, cy, { maxWidth: maxTextW * 0.6 });
+  doc.text(sale.customerName || "-", cx, cy, { maxWidth: maxTextW * 0.62 });
 
   doc.setFontSize(8.7);
   doc.setTextColor(120, 120, 130);
-  doc.text(sale.customerNickname || "-", cx + maxTextW * 0.62, cy, {
-    maxWidth: maxTextW * 0.38,
+  doc.text(sale.customerNickname || "-", cx + maxTextW * 0.64, cy, {
+    maxWidth: maxTextW * 0.36,
   });
 
   const rx = x0 + LEFT_W + CENTER_W + 2;
@@ -188,43 +167,17 @@ async function drawSaleCard(doc: jsPDF, sale: SaleData, x0: number, y0: number) 
   doc.setLineWidth(0.15);
   doc.line(rx - 2, y0 + pad, rx - 2, y0 + CARD_H - pad);
 
-  let ry = y0 + pad + 1;
-  const codeW = RIGHT_W - 8;
-
-  const barcodeData = generateBarcodeDataUrl(sale.barcodeValue);
-  doc.setFontSize(5.4);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(120, 120, 130);
-  doc.text("Codigo de barras", rx + codeW / 2, ry + 1, { align: "center" });
-  ry += 2.8;
-
-  if (barcodeData) {
-    try {
-      doc.addImage(barcodeData, "PNG", rx, ry, codeW, 14);
-    } catch {
-      doc.setFontSize(5);
-      doc.setTextColor(170, 170, 180);
-      doc.text("Sem barcode", rx + codeW / 2, ry + 7, { align: "center" });
-    }
-  } else {
-    doc.setFontSize(5);
-    doc.setTextColor(170, 170, 180);
-    doc.text("Sem barcode", rx + codeW / 2, ry + 7, { align: "center" });
-  }
-
-  ry += 15;
-  doc.setFontSize(5.2);
-  doc.setTextColor(120, 120, 130);
-  doc.text(sale.barcodeValue || "-", rx + codeW / 2, ry, { align: "center" });
-  ry += 4.5;
+  let ry = y0 + pad + 1.5;
+  const codeW = RIGHT_W - 6;
 
   const qrData = await generateQRCodeDataUrl(sale.qrcodeValue);
   doc.setFontSize(5.4);
+  doc.setFont("helvetica", "normal");
   doc.setTextColor(120, 120, 130);
-  doc.text("QR code", rx + codeW / 2, ry, { align: "center" });
-  ry += 2.4;
+  doc.text("QR code", rx + codeW / 2, ry + 1, { align: "center" });
+  ry += 4;
 
-  const qrSize = Math.min(innerH - 24, 18);
+  const qrSize = Math.min(innerH - 12, 22);
   if (qrData) {
     const qrX = rx + (codeW - qrSize) / 2;
     try {

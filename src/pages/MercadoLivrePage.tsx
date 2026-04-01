@@ -55,18 +55,24 @@ interface DepositOption {
   label: string;
 }
 
+interface MLStoreReference {
+  id: string;
+  description: string | null;
+  network_node_id: string | null;
+  location: {
+    address_line?: string | null;
+    street_name?: string | null;
+    city?: string | null;
+  } | null;
+  services: Record<string, unknown> | null;
+}
+
 const SHIPMENT_FILTERS: Array<{ key: ShipmentBucket; label: string }> = [
   { key: "today", label: "Envios de hoje" },
   { key: "upcoming", label: "Proximos dias" },
   { key: "in_transit", label: "Em transito" },
   { key: "finalized", label: "Finalizadas" },
 ];
-
-const KNOWN_DEPOSIT_LABELS: Record<string, string> = {
-  "store:79856028": "Ourinhos Rua Dario Alonso",
-  "node:BRP750436881": "Ourinhos Rua Dario Alonso",
-  "logistic:fulfillment": "Full",
-};
 
 function getRawData(order: MLOrder): any {
   return order.raw_data && typeof order.raw_data === "object" ? order.raw_data : null;
@@ -76,12 +82,8 @@ function getShipmentSnapshot(order: MLOrder): any {
   return getRawData(order)?.shipment_snapshot ?? null;
 }
 
-function getOrderStock(order: MLOrder): { storeId: string | null; nodeId: string | null } {
-  const stock = getRawData(order)?.order_items?.[0]?.stock;
-  return {
-    storeId: stock?.store_id ? String(stock.store_id) : null,
-    nodeId: stock?.node_id ? String(stock.node_id) : null,
-  };
+function getDepositSnapshot(order: MLOrder): any {
+  return getRawData(order)?.deposit_snapshot ?? null;
 }
 
 function parseDate(value: string | null | undefined): Date | null {
@@ -134,34 +136,62 @@ function getShipmentBucket(order: MLOrder): ShipmentBucket {
 }
 
 function getDepositInfo(order: MLOrder): { key: string; label: string; hasDeposit: boolean } {
-  const snapshot = getShipmentSnapshot(order);
-  const logisticType = snapshot?.logistic_type ? String(snapshot.logistic_type) : null;
-  const { storeId, nodeId } = getOrderStock(order);
+  const depositSnapshot = getDepositSnapshot(order);
+  const key = typeof depositSnapshot?.key === "string" ? depositSnapshot.key : "without-deposit";
+  const label =
+    typeof depositSnapshot?.label === "string" && depositSnapshot.label.trim()
+      ? depositSnapshot.label.trim()
+      : "Vendas sem deposito";
+
+  return {
+    key,
+    label,
+    hasDeposit: key !== "without-deposit",
+  };
+}
+
+function getDepositInfoFromStores(
+  order: MLOrder,
+  stores: MLStoreReference[]
+): { key: string; label: string; hasDeposit: boolean } {
+  const stock = getRawData(order)?.order_items?.[0]?.stock;
+  const storeId = stock?.store_id ? String(stock.store_id) : null;
+  const nodeId = stock?.node_id ? String(stock.node_id) : null;
+  const shipmentSnapshot = getShipmentSnapshot(order);
+  const logisticType =
+    typeof shipmentSnapshot?.logistic_type === "string"
+      ? shipmentSnapshot.logistic_type
+      : null;
+
+  const matchedStore =
+    stores.find((store) => storeId && store.id === storeId) ||
+    stores.find((store) => nodeId && store.network_node_id === nodeId) ||
+    null;
+
+  if (matchedStore) {
+    return {
+      key: `store:${matchedStore.id}`,
+      label:
+        matchedStore.description ||
+        matchedStore.location?.address_line ||
+        matchedStore.location?.street_name ||
+        matchedStore.location?.city ||
+        `Deposito ${matchedStore.id}`,
+      hasDeposit: true,
+    };
+  }
 
   if (logisticType === "fulfillment") {
     return {
       key: "logistic:fulfillment",
-      label: KNOWN_DEPOSIT_LABELS["logistic:fulfillment"],
+      label: "Full",
       hasDeposit: true,
     };
   }
 
-  if (storeId) {
-    const key = `store:${storeId}`;
-    return {
-      key,
-      label: KNOWN_DEPOSIT_LABELS[key] || `Deposito ${storeId}`,
-      hasDeposit: true,
-    };
-  }
-
-  if (nodeId) {
-    const key = `node:${nodeId}`;
-    return {
-      key,
-      label: KNOWN_DEPOSIT_LABELS[key] || `Deposito ${nodeId}`,
-      hasDeposit: true,
-    };
+  const fallback = getDepositInfo(order);
+  if (fallback.hasDeposit) {
+    return fallback;
   }
 
   return {
@@ -171,16 +201,34 @@ function getDepositInfo(order: MLOrder): { key: string; label: string; hasDeposi
   };
 }
 
+function matchesSearch(order: MLOrder, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const searchable = [
+    order.sale_number,
+    order.order_id,
+    order.sku || "",
+    order.buyer_name || "",
+    order.buyer_nickname || "",
+    order.item_title || "",
+  ];
+
+  return searchable.some((value) => value.toLowerCase().includes(normalizedQuery));
+}
+
 export default function MercadoLivrePage() {
   const navigate = useNavigate();
   const { setResults } = useExtraction();
   const [connection, setConnection] = useState<MLConnection | null>(null);
   const [orders, setOrders] = useState<MLOrder[]>([]);
+  const [stores, setStores] = useState<MLStoreReference[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [shipmentFilter, setShipmentFilter] = useState<ShipmentBucket>("today");
   const [depositFilter, setDepositFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -193,8 +241,18 @@ export default function MercadoLivrePage() {
       setConnection(currentConnection);
 
       if (currentConnection) {
-        const importedOrders = await getMLOrders();
+        const [importedOrders, storesResponse] = await Promise.all([
+          getMLOrders(),
+          fetch("/api/ml/stores").then(async (response) => {
+            if (!response.ok) return { stores: [] };
+            return response.json();
+          }),
+        ]);
+
         setOrders(importedOrders);
+        setStores(Array.isArray(storesResponse.stores) ? storesResponse.stores : []);
+      } else {
+        setStores([]);
       }
     } catch (error) {
       console.error("Failed to load Mercado Livre data:", error);
@@ -231,8 +289,15 @@ export default function MercadoLivrePage() {
 
       toast.success(`${result.synced} pedidos sincronizados de ${result.total_fetched} encontrados`);
 
-      const importedOrders = await getMLOrders();
+      const [importedOrders, storesResponse] = await Promise.all([
+        getMLOrders(),
+        fetch("/api/ml/stores").then(async (response) => {
+          if (!response.ok) return { stores: [] };
+          return response.json();
+        }),
+      ]);
       setOrders(importedOrders);
+      setStores(Array.isArray(storesResponse.stores) ? storesResponse.stores : []);
       const currentConnection = await getMLConnectionStatus();
       setConnection(currentConnection);
     } catch (error: any) {
@@ -249,6 +314,7 @@ export default function MercadoLivrePage() {
       await disconnectML(connection.id);
       setConnection(null);
       setOrders([]);
+      setStores([]);
       toast.success("Conta desconectada");
     } catch (error: any) {
       toast.error(error.message || "Erro ao desconectar");
@@ -280,7 +346,7 @@ export default function MercadoLivrePage() {
     const optionsMap = new Map<string, string>();
 
     for (const order of orders) {
-      const depositInfo = getDepositInfo(order);
+      const depositInfo = getDepositInfoFromStores(order, stores);
       if (depositInfo.hasDeposit) {
         optionsMap.set(depositInfo.key, depositInfo.label);
       }
@@ -289,13 +355,13 @@ export default function MercadoLivrePage() {
     return Array.from(optionsMap.entries())
       .map(([key, label]) => ({ key, label }))
       .sort((left, right) => left.label.localeCompare(right.label, "pt-BR"));
-  }, [orders]);
+  }, [orders, stores]);
 
   const depositFilteredOrders = useMemo(() => {
     if (depositFilter === "all") return orders;
 
     return orders.filter((order) => {
-      const depositInfo = getDepositInfo(order);
+      const depositInfo = getDepositInfoFromStores(order, stores);
 
       if (depositFilter === "without-deposit") {
         return !depositInfo.hasDeposit;
@@ -303,7 +369,7 @@ export default function MercadoLivrePage() {
 
       return depositInfo.key === depositFilter;
     });
-  }, [depositFilter, orders]);
+  }, [depositFilter, orders, stores]);
 
   const shipmentCounts = useMemo(() => {
     return SHIPMENT_FILTERS.reduce<Record<ShipmentBucket, number>>(
@@ -322,11 +388,15 @@ export default function MercadoLivrePage() {
     );
   }, [depositFilteredOrders]);
 
-  const filteredOrders = useMemo(() => {
+  const shipmentFilteredOrders = useMemo(() => {
     return depositFilteredOrders.filter(
       (order) => getShipmentBucket(order) === shipmentFilter
     );
   }, [depositFilteredOrders, shipmentFilter]);
+
+  const filteredOrders = useMemo(() => {
+    return shipmentFilteredOrders.filter((order) => matchesSearch(order, searchQuery));
+  }, [searchQuery, shipmentFilteredOrders]);
 
   if (loading) {
     return (
@@ -557,6 +627,15 @@ export default function MercadoLivrePage() {
                 </div>
               </div>
 
+              <div className="mb-4">
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Buscar por numero da venda, SKU, cliente ou nickname"
+                  className="h-11 bg-secondary/40 text-sm"
+                />
+              </div>
+
               {orders.length > 0 && missingImageCount > 0 && (
                 <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
                   <p className="font-medium">
@@ -590,7 +669,7 @@ export default function MercadoLivrePage() {
                 <div className="py-8 text-center">
                   <ShoppingCart className="mx-auto mb-2 h-8 w-8 text-muted-foreground/30" />
                   <p className="text-sm text-muted-foreground">
-                    Nenhum pedido encontrado para o filtro selecionado.
+                    Nenhum pedido encontrado para os filtros e busca selecionados.
                   </p>
                 </div>
               ) : (
@@ -631,7 +710,7 @@ export default function MercadoLivrePage() {
                               {order.order_status || "-"}
                             </Badge>
                             <Badge variant="outline" className="text-[10px]">
-                              {getDepositInfo(order).label}
+                              {getDepositInfoFromStores(order, stores).label}
                             </Badge>
                           </div>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">

@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import JsBarcode from "jsbarcode";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { SaleData } from "@/types/sales";
 
@@ -11,46 +10,6 @@ function CodePlaceholder({ label }: { label: string }) {
   return (
     <div className="flex h-full min-h-20 items-center justify-center rounded-md border border-dashed border-border bg-white text-[10px] text-muted-foreground">
       {label}
-    </div>
-  );
-}
-
-function BarcodePreview({ value }: { value: string }) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-
-  useEffect(() => {
-    if (!svgRef.current) return;
-
-    if (!value) {
-      svgRef.current.innerHTML = "";
-      return;
-    }
-
-    try {
-      JsBarcode(svgRef.current, value, {
-        format: "CODE128",
-        width: 1.35,
-        height: 34,
-        margin: 0,
-        background: "#ffffff",
-        lineColor: "#111827",
-        displayValue: false,
-      });
-    } catch {
-      svgRef.current.innerHTML = "";
-    }
-  }, [value]);
-
-  if (!value) {
-    return <CodePlaceholder label="Sem codigo" />;
-  }
-
-  return (
-    <div className="rounded-md border border-border bg-white p-2 shadow-sm">
-      <svg ref={svgRef} className="h-14 w-full overflow-visible" />
-      <p className="mt-1 text-center font-mono text-[10px] text-muted-foreground">
-        {value}
-      </p>
     </div>
   );
 }
@@ -69,7 +28,7 @@ function QRCodePreview({ value }: { value: string }) {
     }
 
     QRCode.toDataURL(value, {
-      width: 180,
+      width: 220,
       margin: 1,
       color: { dark: "#111827", light: "#FFFFFF" },
     })
@@ -91,7 +50,7 @@ function QRCodePreview({ value }: { value: string }) {
 
   return (
     <div className="rounded-md border border-border bg-white p-2 shadow-sm">
-      <img src={src} alt={`QR code ${value}`} className="mx-auto h-24 w-24 object-contain" />
+      <img src={src} alt={`QR code ${value}`} className="mx-auto h-28 w-28 object-contain" />
       <p className="mt-1 text-center font-mono text-[10px] text-muted-foreground">
         {value}
       </p>
@@ -172,21 +131,12 @@ export function SaleCardPreview({ sale }: SaleCardPreviewProps) {
             </div>
           </div>
 
-          <div className="border-t border-slate-200 bg-slate-50 p-4 md:w-44 md:border-l md:border-t-0">
-            <div className="space-y-3">
-              <div>
-                <p className="mb-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                  Codigo de barras
-                </p>
-                <BarcodePreview value={sale.barcodeValue} />
-              </div>
-
-              <div>
-                <p className="mb-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                  QR code
-                </p>
-                <QRCodePreview value={sale.qrcodeValue} />
-              </div>
+          <div className="border-t border-slate-200 bg-slate-50 p-4 md:w-40 md:border-l md:border-t-0">
+            <div>
+              <p className="mb-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                QR code
+              </p>
+              <QRCodePreview value={sale.qrcodeValue} />
             </div>
           </div>
         </div>
